@@ -44,6 +44,16 @@ function renderBlankPageImage(boxWidth, boxHeight) {
   return canvas.toDataURL('image/jpeg', 0.86);
 }
 
+function renderVirtualPageImage(boxWidth, boxHeight) {
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.max(1, Math.floor(boxWidth));
+  canvas.height = Math.max(1, Math.floor(boxHeight));
+  const context = canvas.getContext('2d');
+  context.fillStyle = '#e9edf1';
+  context.fillRect(0, 0, canvas.width, canvas.height);
+  return canvas.toDataURL('image/png');
+}
+
 function preloadImage(src) {
   return new Promise((resolve, reject) => {
     const image = new Image();
@@ -109,6 +119,15 @@ function softenBookShadow(pageFlip) {
   };
 }
 
+function useTransparentCanvas(pageFlip) {
+  const render = pageFlip.getRender?.();
+  if (!render || typeof render.clear !== 'function') return;
+
+  render.clear = function clear() {
+    this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+  };
+}
+
 export default function FlipView({ pdfDoc, plan }) {
   const shellRef = useRef(null);
   const stageRef = useRef(null);
@@ -153,7 +172,9 @@ export default function FlipView({ pdfDoc, plan }) {
     resizeObserver.observe(shell);
 
     async function setup() {
-      const images = [];
+      // These two preview-only pages turn cover/back-cover boundaries into
+      // ordinary spreads so StPageFlip can handle every flip state natively.
+      const images = [await preloadImage(renderVirtualPageImage(PAGE_W, PAGE_H))];
       for (let pageNumber = 1; pageNumber <= plan.total; pageNumber += 1) {
         const slot = plan.pageSlots[pageNumber - 1];
         const src = slot.kind === 'blank'
@@ -162,6 +183,7 @@ export default function FlipView({ pdfDoc, plan }) {
         images.push(await preloadImage(src));
         if (cancelled) return;
       }
+      images.push(await preloadImage(renderVirtualPageImage(PAGE_W, PAGE_H)));
 
       if (cancelled) return;
 
@@ -179,7 +201,7 @@ export default function FlipView({ pdfDoc, plan }) {
         maxHeight: PAGE_H,
         autoSize: true,
         usePortrait: false,
-        showCover: true,
+        showCover: false,
         drawShadow: true,
         flippingTime: 1000,
         maxShadowOpacity: 0.5,
@@ -188,6 +210,7 @@ export default function FlipView({ pdfDoc, plan }) {
       pageFlipRef.current = pageFlip;
       pageFlip.loadFromImages(images);
       softenBookShadow(pageFlip);
+      useTransparentCanvas(pageFlip);
       pageFlip.getUI()?.update();
 
       pageFlip.on('init', ({ data }) => {
@@ -244,11 +267,7 @@ export default function FlipView({ pdfDoc, plan }) {
     const pageFlip = pageFlipRef.current;
     if (!pageFlip || flipping || targetIndex === index) return;
 
-    const targetPage = targetIndex === 0
-      ? 0
-      : targetIndex === spreadCount - 1
-        ? plan.total - 1
-        : targetIndex * 2 - 1;
+    const targetPage = targetIndex * 2;
     pageFlip.flip(targetPage, 'top');
   }, [flipping, index, plan.total, spreadCount]);
 

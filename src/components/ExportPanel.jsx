@@ -1,13 +1,17 @@
 import { CheckCircle2, Download, Files, Loader2, Printer } from 'lucide-react';
+import { PAPER_SIZES } from '../lib/booklet';
 
 export default function ExportPanel({
   plan,
+  paperSize = 'a4',
   exportMode,
   onModeChange,
   onExport,
   exporting,
   exportDone,
 }) {
+  const paper = PAPER_SIZES[paperSize] || PAPER_SIZES.a4;
+
   return (
     <section className="card export-card">
       <h3 className="card-title">导出打印文件</h3>
@@ -64,7 +68,7 @@ export default function ExportPanel({
         </p>
       )}
       <p className="export-meta">
-        共 {plan.sheets} 张 A4 纸 · {plan.total} 个页面位置
+        共 {plan.sheets} 张 {paper.label}纸 · {paper.sizeText}
       </p>
     </section>
   );

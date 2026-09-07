@@ -1,15 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import Slot from './Slot';
-import { MAX_SPINE_GAP_MM } from '../lib/booklet';
+import { MAX_SPINE_GAP_MM, PAPER_SIZES } from '../lib/booklet';
 
-const SLOT_W = 280;
-const SLOT_H = 396;
-const SHEET_H = SLOT_H;
-const A4_WIDTH_MM = 297;
-const SHEET_W = SLOT_W * 2;
-const MM_TO_PX = SHEET_W / A4_WIDTH_MM;
+const PX_PER_MM = 840 / PAPER_SIZES.a4.sheetWidthMm;
 
-export default function SheetView({ pdfDoc, plan, spineGap = 0 }) {
+export default function SheetView({ pdfDoc, plan, spineGap = 0, paperSize = 'a4' }) {
   const faces = useMemo(() => {
     const list = [];
     for (const sheet of plan.plan) {
@@ -23,9 +18,12 @@ export default function SheetView({ pdfDoc, plan, spineGap = 0 }) {
   const wrapRef = useRef(null);
   const [scale, setScale] = useState(1);
   const clampedSpineGap = Math.min(MAX_SPINE_GAP_MM, Math.max(0, Number(spineGap) || 0));
-  const spineGapPx = clampedSpineGap * MM_TO_PX;
-  const slotWidth = Math.max(0, (SHEET_W - spineGapPx) / 2);
-  const sheetWidth = SHEET_W;
+  const paper = PAPER_SIZES[paperSize] || PAPER_SIZES.a4;
+  const sheetWidth = paper.sheetWidthMm * PX_PER_MM;
+  const sheetHeight = paper.sheetHeightMm * PX_PER_MM;
+  const slotHeight = sheetHeight;
+  const spineGapPx = clampedSpineGap * PX_PER_MM;
+  const slotWidth = Math.max(0, (sheetWidth - spineGapPx) / 2);
 
   useEffect(() => {
     const el = wrapRef.current;
@@ -52,13 +50,32 @@ export default function SheetView({ pdfDoc, plan, spineGap = 0 }) {
   return (
     <div className="view-block">
       <div className="view-canvas" ref={wrapRef}>
-        <div style={{ height: SHEET_H * scale }}>
-          <div className="sheet" style={{ width: sheetWidth, height: SHEET_H, transform: `scale(${scale})` }}>
-            <Slot pdfDoc={pdfDoc} slot={face.left} boxWidth={slotWidth} boxHeight={SLOT_H} badgeSide="left" />
+        <div style={{ height: sheetHeight * scale }}>
+          <div className="sheet" style={{ width: sheetWidth, height: sheetHeight, transform: `scale(${scale})` }}>
+            <Slot
+              pdfDoc={pdfDoc}
+              slot={face.left}
+              boxWidth={slotWidth}
+              boxHeight={slotHeight}
+              badgeSide="left"
+              anchor="right"
+            />
             <div className="fold-line" style={{ width: spineGapPx }} />
-            <Slot pdfDoc={pdfDoc} slot={face.right} boxWidth={slotWidth} boxHeight={SLOT_H} badgeSide="right" />
+            <Slot
+              pdfDoc={pdfDoc}
+              slot={face.right}
+              boxWidth={slotWidth}
+              boxHeight={slotHeight}
+              badgeSide="right"
+              anchor="left"
+            />
           </div>
         </div>
+      </div>
+
+      <div className="paper-size-note">
+        <span>{paper.label}</span>
+        <span>{paper.sizeText}</span>
       </div>
 
       <div className="face-strip" role="tablist" aria-label="纸张面列表">

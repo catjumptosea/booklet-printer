@@ -1,10 +1,16 @@
-import { useState } from 'react';
-import { AlertTriangle, BookOpenCheck, Layers, RotateCcw, ShieldCheck, X } from 'lucide-react';
+import { useRef, useState } from 'react';
+import { AlertTriangle, BookOpenCheck, Layers, Loader2, RotateCcw, ShieldCheck, X } from 'lucide-react';
 import Dropzone from './components/Dropzone';
 import SheetView from './components/SheetView';
 import FlipView from './components/FlipView';
 import ExportPanel from './components/ExportPanel';
-import { buildBookletPlan, MAX_SPINE_GAP_MM, normalizeSpineGap } from './lib/booklet';
+import {
+  buildBookletPlan,
+  MAX_SPINE_GAP_MM,
+  normalizePaperSize,
+  normalizeSpineGap,
+  PAPER_SIZES,
+} from './lib/booklet';
 import { loadPdfDoc } from './lib/pdfjs';
 import { baseName, buildExportPdf } from './lib/exportPdf';
 
@@ -16,36 +22,28 @@ function formatSize(bytes) {
 }
 
 export default function App() {
+  const changeFileInputRef = useRef(null);
   const [status, setStatus] = useState('idle'); // idle | parsing | ready
   const [error, setError] = useState(null);
   const [fileMeta, setFileMeta] = useState(null);
   const [bytes, setBytes] = useState(null);
   const [pdfDoc, setPdfDoc] = useState(null);
   const [plan, setPlan] = useState(null);
+  const [paperSize, setPaperSize] = useState('a4');
   const [spineGap, setSpineGap] = useState(0);
   const [blankInputs, setBlankInputs] = useState([]);
   const [view, setView] = useState('flip');
   const [exportMode, setExportMode] = useState('duplex');
   const [exporting, setExporting] = useState(false);
   const [exportDone, setExportDone] = useState(null);
-
-  function reset() {
-    pdfDoc?.destroy?.();
-    setStatus('idle');
-    setError(null);
-    setFileMeta(null);
-    setBytes(null);
-    setPdfDoc(null);
-    setPlan(null);
-    setSpineGap(0);
-    setBlankInputs([]);
-    setExportDone(null);
-  }
+  const [changingFile, setChangingFile] = useState(false);
+  const activeSpineGap = normalizeSpineGap(spineGap);
+  const activePaperSize = normalizePaperSize(paperSize);
+  const activePaper = PAPER_SIZES[activePaperSize];
 
   async function handleFile(file) {
     if (!file) return;
-    setError(null);
-    setExportDone(null);
+    const isReplacement = Boolean(pdfDoc && plan);
     const isPdf = /\.pdf$/i.test(file.name) || file.type === 'application/pdf';
     if (!isPdf) {
       setError('仅支持 PDF 文件');
@@ -55,14 +53,23 @@ export default function App() {
       setError('文件超过 100 MB，请先拆分后再试');
       return;
     }
-    setStatus('parsing');
-    pdfDoc?.destroy?.();
-    setPdfDoc(null);
+
+    setError(null);
+    setExportDone(null);
+    if (isReplacement) {
+      setChangingFile(true);
+    } else {
+      setStatus('parsing');
+    }
+
     try {
       const buf = await file.arrayBuffer();
       const exportBytes = new Uint8Array(buf.slice(0));
       const previewBytes = new Uint8Array(buf.slice(0));
       const doc = await loadPdfDoc(previewBytes);
+      if (isReplacement) {
+        pdfDoc?.destroy?.();
+      }
       setBytes(exportBytes);
       setPdfDoc(doc);
       setFileMeta({ name: file.name, size: file.size });
@@ -70,7 +77,6 @@ export default function App() {
       setPlan(nextPlan);
       setSpineGap(0);
       setBlankInputs(nextPlan.blankPositions.map(String));
-      setView('flip');
       setStatus('ready');
     } catch (err) {
       if (err?.name === 'PasswordException') {
@@ -78,7 +84,11 @@ export default function App() {
       } else {
         setError('文件无法读取，请确认文件未损坏');
       }
-      setStatus('idle');
+      if (!isReplacement) {
+        setStatus('idle');
+      }
+    } finally {
+      setChangingFile(false);
     }
   }
 
@@ -100,13 +110,13 @@ export default function App() {
     try {
       const base = baseName(fileMeta.name);
       if (exportMode === 'duplex') {
-        const data = await buildExportPdf(bytes, plan, 'duplex', spineGap);
+        const data = await buildExportPdf(bytes, plan, 'duplex', activeSpineGap, { paperSize: activePaperSize });
         download(data, `${base}-booklet-duplex.pdf`);
       } else {
-        const front = await buildExportPdf(bytes, plan, 'front', spineGap);
+        const front = await buildExportPdf(bytes, plan, 'front', activeSpineGap, { paperSize: activePaperSize });
         download(front, `${base}-booklet-front.pdf`);
         await new Promise((r) => setTimeout(r, 600));
-        const back = await buildExportPdf(bytes, plan, 'back', spineGap);
+        const back = await buildExportPdf(bytes, plan, 'back', activeSpineGap, { paperSize: activePaperSize });
         download(back, `${base}-booklet-back.pdf`);
       }
       setExportDone(exportMode);
@@ -157,10 +167,18 @@ export default function App() {
   function handleSpineGapChange(event) {
     const value = event.target.value;
     setSpineGap(value === '' ? '' : Number(value));
+    setExportDone(null);
   }
 
   function commitSpineGap() {
     setSpineGap((current) => normalizeSpineGap(current));
+    setExportDone(null);
+  }
+
+  function handlePaperSizeChange(value) {
+    if (value === activePaperSize) return;
+    setPaperSize(value);
+    setExportDone(null);
   }
 
   return (
@@ -202,10 +220,43 @@ export default function App() {
                   <span className="file-name" title={fileMeta.name}>{fileMeta.name}</span>
                   <span className="file-size">{formatSize(fileMeta.size)}</span>
                 </div>
-                <button type="button" className="btn-ghost" onClick={reset}>
-                  <RotateCcw size={13} />
-                  换文件
+                <input
+                  ref={changeFileInputRef}
+                  type="file"
+                  accept="application/pdf,.pdf"
+                  hidden
+                  onChange={(event) => {
+                    handleFile(event.target.files?.[0]);
+                    event.target.value = '';
+                  }}
+                />
+                <button
+                  type="button"
+                  className="btn-ghost"
+                  onClick={() => changeFileInputRef.current?.click()}
+                  disabled={changingFile || exporting}
+                >
+                  {changingFile ? <Loader2 size={13} className="spin" /> : <RotateCcw size={13} />}
+                  {changingFile ? '替换中' : '换文件'}
                 </button>
+              </div>
+              <div className="stat stat-wide paper-size-stat">
+                <span className="stat-label">纸张尺寸</span>
+                <div className="paper-size-switch" role="radiogroup" aria-label="纸张尺寸">
+                  {Object.values(PAPER_SIZES).map((paper) => (
+                    <button
+                      key={paper.id}
+                      type="button"
+                      role="radio"
+                      aria-checked={activePaperSize === paper.id}
+                      className={activePaperSize === paper.id ? 'active' : ''}
+                      onClick={() => handlePaperSizeChange(paper.id)}
+                    >
+                      <span>{paper.label}</span>
+                      <small>{paper.sizeText}</small>
+                    </button>
+                  ))}
+                </div>
               </div>
               <div className="stat-grid">
                 <div className="stat">
@@ -217,7 +268,7 @@ export default function App() {
                   <span className="stat-value">{plan.total}</span>
                 </div>
                 <div className="stat">
-                  <span className="stat-label">A4 纸张</span>
+                  <span className="stat-label">{activePaper.label} 纸张</span>
                   <span className="stat-value">{plan.sheets} 张</span>
                 </div>
                 <div className="stat stat-wide">
@@ -289,6 +340,7 @@ export default function App() {
 
             <ExportPanel
               plan={plan}
+              paperSize={activePaperSize}
               exportMode={exportMode}
               onModeChange={setExportMode}
               onExport={handleExport}
@@ -321,9 +373,9 @@ export default function App() {
               </button>
             </div>
             {view === 'sheet' ? (
-              <SheetView pdfDoc={pdfDoc} plan={plan} spineGap={spineGap} />
+              <SheetView pdfDoc={pdfDoc} plan={plan} spineGap={activeSpineGap} paperSize={activePaperSize} />
             ) : (
-              <FlipView pdfDoc={pdfDoc} plan={plan} spineGap={spineGap} />
+              <FlipView pdfDoc={pdfDoc} plan={plan} spineGap={activeSpineGap} paperSize={activePaperSize} />
             )}
           </section>
         </main>

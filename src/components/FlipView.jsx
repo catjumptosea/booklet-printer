@@ -1,18 +1,28 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { PageFlip } from 'page-flip';
 import { ChevronLeft, ChevronRight, CornerDownLeft, Maximize, Minimize } from 'lucide-react';
+import { PAPER_SIZES } from '../lib/booklet';
 
-const PAGE_W = 420;
-const PAGE_H = 594;
-const SHEET_W = PAGE_W * 2;
 const MAX_HIGH_RES_PAGE_WIDTH = 1800;
 const HIGH_RES_JPEG_QUALITY = 0.92;
 const HIGH_RES_MEMORY_BUDGET = 256 * 1024 * 1024;
 const HIGH_RES_RETENTION_MS = 60 * 1000;
 const HIGH_RES_SOURCE_RELEASE_DELAY_MS = 1500;
-const A4_WIDTH_MM = 297;
-const A4_HEIGHT_MM = 210;
 const MAX_SPINE_GAP_MM = 280;
+const PX_PER_MM = 840 / PAPER_SIZES.a4.sheetWidthMm;
+
+function getPaperGeometry(paperSize) {
+  const paper = PAPER_SIZES[paperSize] || PAPER_SIZES.a4;
+  const sheetWidth = paper.sheetWidthMm * PX_PER_MM;
+  const sheetHeight = paper.sheetHeightMm * PX_PER_MM;
+  return {
+    paper,
+    sheetWidth,
+    sheetHeight,
+    pageWidth: sheetWidth / 2,
+    pageHeight: sheetHeight,
+  };
+}
 
 function canvasToObjectUrl(canvas, type, quality) {
   return new Promise((resolve, reject) => {
@@ -33,32 +43,37 @@ function clampSpineGap(value) {
 }
 
 function getSpineGapPx(spineGap) {
-  return (clampSpineGap(spineGap) / A4_WIDTH_MM) * SHEET_W;
+  return clampSpineGap(spineGap) * PX_PER_MM;
 }
 
-function getPageContentWidthPx(spineGap) {
-  return (SHEET_W - getSpineGapPx(spineGap)) / 2;
+function getPageContentWidthPx(spineGap, geometry) {
+  return (geometry.sheetWidth - getSpineGapPx(spineGap)) / 2;
 }
 
-// Each flipping page keeps the gutter symmetrically on both edges. The view
-// crops the outer halves, leaving one continuous gutter at the book spine.
-// PageFlip then moves an image with identical left/right geometry, so a page
-// does not jump when its orientation changes during the flip animation.
-function getPageBoxWidth(spineGap) {
-  return getPageContentWidthPx(spineGap) + getSpineGapPx(spineGap);
+// Each page box reserves half the spine gap at both edges. The view crops the
+// outer halves, leaving one continuous gutter at the book spine.
+function getPageBoxWidth(spineGap, geometry) {
+  return getPageContentWidthPx(spineGap, geometry) + getSpineGapPx(spineGap);
 }
 
-function getStageWidth(spineGap) {
-  return getPageBoxWidth(spineGap) * 2;
+function getStageWidth(spineGap, geometry) {
+  return getPageBoxWidth(spineGap, geometry) * 2;
 }
 
-function getDisplayPageHeight(pageWidth, spineGap) {
-  const pageBoxWidth = getPageBoxWidth(spineGap);
-  return Math.max(1, Math.round((pageWidth / pageBoxWidth) * PAGE_H));
+function getDisplayPageHeight(pageWidth, spineGap, geometry) {
+  const pageBoxWidth = getPageBoxWidth(spineGap, geometry);
+  return Math.max(1, Math.round((pageWidth / pageBoxWidth) * geometry.pageHeight));
 }
 
-function getVisibleAspect() {
-  return SHEET_W / PAGE_H;
+function getVisibleAspect(geometry) {
+  return geometry.sheetWidth / geometry.pageHeight;
+}
+
+// Image pages know their printed side: odd pages are the right page, even
+// pages are the left page. Anchor fitted content toward the fold so the
+// flipbook matches the sheet preview and exported geometry.
+function getPageContentAnchor(pageNumber) {
+  return pageNumber % 2 === 1 ? 'left' : 'right';
 }
 
 function renderPageImage(
@@ -69,6 +84,7 @@ function renderPageImage(
   renderScale = Math.min(2, window.devicePixelRatio || 1),
   quality = 0.86,
   contentInsetPx = 0,
+  contentAnchor = 'center',
 ) {
   return new Promise((resolve, reject) => {
     (async () => {
@@ -88,8 +104,14 @@ function renderPageImage(
       const context = canvas.getContext('2d');
       context.fillStyle = '#ffffff';
       context.fillRect(0, 0, canvas.width, canvas.height);
+      const availableWidth = canvas.width - inset * 2;
+      const contentX = contentAnchor === 'left'
+        ? inset
+        : contentAnchor === 'right'
+          ? Math.max(inset, canvas.width - inset - viewport.width)
+          : inset + Math.max(0, (availableWidth - viewport.width) / 2);
       context.translate(
-        inset + (contentWidth - viewport.width) / 2,
+        contentX,
         (canvas.height - viewport.height) / 2,
       );
       await page.render({ canvasContext: context, viewport }).promise;
@@ -150,20 +172,20 @@ function getSpreadIndex(pageIndex) {
   return Math.floor((pageIndex + 1) / 2);
 }
 
-function getHighResRenderTarget(shell, spineGap) {
+function getHighResRenderTarget(shell, spineGap, geometry) {
   const availableWidth = shell.clientWidth;
   const availableHeight = shell.clientHeight;
   if (!availableWidth || !availableHeight) return null;
 
   const devicePixelRatio = Math.max(1, window.devicePixelRatio || 1);
-  const displayWidth = Math.min(availableWidth, availableHeight * getVisibleAspect());
-  const displayGapPx = getSpineGapPx(spineGap) * (displayWidth / SHEET_W);
+  const displayWidth = Math.min(availableWidth, availableHeight * getVisibleAspect(geometry));
+  const displayGapPx = getSpineGapPx(spineGap) * (displayWidth / geometry.sheetWidth);
   const displayContentWidth = Math.max(0, (displayWidth - displayGapPx) / 2);
   const targetPixelWidth = Math.max(1, Math.round(displayContentWidth * devicePixelRatio));
   const gapPx = Math.round(displayGapPx * devicePixelRatio);
-  const targetHeight = Math.max(1, Math.round(targetPixelWidth * (PAGE_H / PAGE_W)));
+  const targetHeight = Math.max(1, Math.round(targetPixelWidth * (geometry.pageHeight / geometry.pageWidth)));
   const pagePixelWidth = targetPixelWidth + gapPx;
-  const basePixelWidth = Math.round(PAGE_W * devicePixelRatio * 1.12);
+  const basePixelWidth = Math.round(geometry.pageWidth * devicePixelRatio * 1.12);
 
   if (targetPixelWidth < basePixelWidth || pagePixelWidth < 2) return null;
 
@@ -271,7 +293,7 @@ function markVirtualPages(pageFlip) {
   if (pages[pages.length - 1]) pages[pages.length - 1].isVirtual = true;
 }
 
-function applyIntegerPageGeometry(pageFlip, spineGap) {
+function applyIntegerPageGeometry(pageFlip, spineGap, geometry) {
   const render = pageFlip.getRender?.();
   const settings = pageFlip.getSettings?.();
   if (!render || !settings) return;
@@ -280,7 +302,7 @@ function applyIntegerPageGeometry(pageFlip, spineGap) {
   const pageWidth = Math.max(1, Math.round(rect?.pageWidth || 0));
   if (!pageWidth) return;
 
-  const pageHeight = getDisplayPageHeight(pageWidth, spineGap);
+  const pageHeight = getDisplayPageHeight(pageWidth, spineGap, geometry);
   if (settings.width === pageWidth && settings.height === pageHeight) return;
 
   settings.width = pageWidth;
@@ -288,7 +310,7 @@ function applyIntegerPageGeometry(pageFlip, spineGap) {
   pageFlip.updateOrientation(pageFlip.getOrientation());
 }
 
-export default function FlipView({ pdfDoc, plan, spineGap = 0 }) {
+export default function FlipView({ pdfDoc, plan, spineGap = 0, paperSize = 'a4' }) {
   const shellRef = useRef(null);
   const stageRef = useRef(null);
   const viewBlockRef = useRef(null);
@@ -303,6 +325,7 @@ export default function FlipView({ pdfDoc, plan, spineGap = 0 }) {
   const downgradeTimerRef = useRef(null);
   const highResReleaseTimerRef = useRef(null);
   const previewSwitchTokenRef = useRef(0);
+  const geometry = useMemo(() => getPaperGeometry(paperSize), [paperSize]);
   const [index, setIndex] = useState(0);
   const [ready, setReady] = useState(false);
   const [flipping, setFlipping] = useState(false);
@@ -452,8 +475,8 @@ export default function FlipView({ pdfDoc, plan, spineGap = 0 }) {
       const availableWidth = shell.clientWidth;
       const availableHeight = shell.clientHeight;
       if (!availableWidth || !availableHeight) return;
-      const visibleWidth = Math.min(availableWidth, availableHeight * getVisibleAspect());
-      const width = visibleWidth * (getStageWidth(spineGap) / SHEET_W);
+      const visibleWidth = Math.min(availableWidth, availableHeight * getVisibleAspect(geometry));
+      const width = visibleWidth * (getStageWidth(spineGap, geometry) / geometry.sheetWidth);
       // StPageFlip divides the stage width by two. An odd stage width creates a
       // fractional page width and a visible sub-pixel seam at the outer edges.
       stage.style.width = `${Math.max(0, Math.floor(width / 2) * 2)}px`;
@@ -477,7 +500,7 @@ export default function FlipView({ pdfDoc, plan, spineGap = 0 }) {
       if (currentFlip && currentFlip.getUI()) {
         requestAnimationFrame(() => {
           if (pageFlipRef.current !== currentFlip) return;
-          applyIntegerPageGeometry(currentFlip, spineGap);
+          applyIntegerPageGeometry(currentFlip, spineGap, geometry);
         });
       }
     });
@@ -487,11 +510,11 @@ export default function FlipView({ pdfDoc, plan, spineGap = 0 }) {
 
     async function setup() {
       const spineGapPx = getSpineGapPx(spineGap);
-      const pageBoxWidth = getPageBoxWidth(spineGap);
+      const pageBoxWidth = getPageBoxWidth(spineGap, geometry);
       // These two preview-only pages turn cover/back-cover boundaries into
       // ordinary spreads so StPageFlip can handle every flip state natively.
       lowResUrls = [];
-      const firstUrl = await renderVirtualPageImage(pageBoxWidth, PAGE_H);
+      const firstUrl = await renderVirtualPageImage(pageBoxWidth, geometry.pageHeight);
       if (cancelled) {
         revokeImageUrls([firstUrl]);
         lowResImagesRef.current = null;
@@ -502,15 +525,16 @@ export default function FlipView({ pdfDoc, plan, spineGap = 0 }) {
       for (let pageNumber = 1; pageNumber <= plan.total; pageNumber += 1) {
         const slot = plan.pageSlots[pageNumber - 1];
         const src = slot.kind === 'blank'
-          ? await renderBlankPageImage(pageBoxWidth, PAGE_H)
+          ? await renderBlankPageImage(pageBoxWidth, geometry.pageHeight)
           : await renderPageImage(
             pdfDoc,
             slot.sourcePage,
             pageBoxWidth,
-            PAGE_H,
+            geometry.pageHeight,
             undefined,
             undefined,
             spineGapPx / 2,
+            getPageContentAnchor(pageNumber),
           );
         if (cancelled) {
           revokeImageUrls([src]);
@@ -525,7 +549,7 @@ export default function FlipView({ pdfDoc, plan, spineGap = 0 }) {
           return;
         }
       }
-      const lastUrl = await renderVirtualPageImage(pageBoxWidth, PAGE_H);
+      const lastUrl = await renderVirtualPageImage(pageBoxWidth, geometry.pageHeight);
       if (cancelled) {
         revokeImageUrls([lastUrl]);
         revokeImageUrls(lowResUrls);
@@ -548,12 +572,12 @@ export default function FlipView({ pdfDoc, plan, spineGap = 0 }) {
 
       pageFlip = new PageFlip(host, {
         width: pageBoxWidth,
-        height: PAGE_H,
+        height: geometry.pageHeight,
         size: 'stretch',
         minWidth: 120,
-        maxWidth: PAGE_W * 4,
+        maxWidth: geometry.pageWidth * 4,
         minHeight: 170,
-        maxHeight: PAGE_H * 4,
+        maxHeight: geometry.pageHeight * 4,
         autoSize: true,
         usePortrait: false,
         showCover: false,
@@ -564,7 +588,7 @@ export default function FlipView({ pdfDoc, plan, spineGap = 0 }) {
       });
       pageFlipRef.current = pageFlip;
       pageFlip.loadFromImages(lowResUrls);
-      applyIntegerPageGeometry(pageFlip, spineGap);
+      applyIntegerPageGeometry(pageFlip, spineGap, geometry);
       activeQualityRef.current = 'low';
       softenBookShadow(pageFlip);
       useDesktopCanvas(pageFlip);
@@ -607,7 +631,7 @@ export default function FlipView({ pdfDoc, plan, spineGap = 0 }) {
       if (pageFlip) pageFlip.destroy();
       stage.replaceChildren();
     };
-  }, [pdfDoc, plan, spineGap, releaseAllPreviewSources]);
+  }, [pdfDoc, plan, spineGap, releaseAllPreviewSources, geometry]);
 
   useEffect(() => {
     const onKey = (event) => {
@@ -701,13 +725,14 @@ export default function FlipView({ pdfDoc, plan, spineGap = 0 }) {
     const pageFlip = pageFlipRef.current;
     if (!shell || !pageFlip || !pdfDoc || !plan) return;
 
-    const target = getHighResRenderTarget(shell, spineGap);
+    const target = getHighResRenderTarget(shell, spineGap, geometry);
     if (!target) return;
 
     const renderKey = [
       plan.originalPageCount,
       plan.total,
       plan.blankPositions.join('-'),
+      geometry.paper.id,
       target.width,
       target.height,
     ].join(':');
@@ -768,6 +793,7 @@ export default function FlipView({ pdfDoc, plan, spineGap = 0 }) {
             1,
             HIGH_RES_JPEG_QUALITY,
             target.gap / 2,
+            getPageContentAnchor(pageNumber),
           );
         highResUrls.push(src);
         await preloadImage(src);
@@ -832,7 +858,7 @@ export default function FlipView({ pdfDoc, plan, spineGap = 0 }) {
     } finally {
       window.clearTimeout(showProgressTimer);
     }
-  }, [applyRetainedHighRes, pdfDoc, plan, spineGap]);
+  }, [applyRetainedHighRes, geometry, pdfDoc, plan, spineGap]);
 
   useEffect(() => {
     if (!isFullscreen || !ready || flipping) return undefined;
@@ -866,6 +892,10 @@ export default function FlipView({ pdfDoc, plan, spineGap = 0 }) {
       </div>
 
       <div className="view-footer">
+        <div className="paper-size-note">
+          <span>{geometry.paper.label}</span>
+          <span>{geometry.paper.sizeText}</span>
+        </div>
         <p className="view-hint">按成册翻阅顺序预览；空白页会保留在打印文件中。</p>
         <div className="view-actions">
           <form className="jump" onSubmit={submitJump}>

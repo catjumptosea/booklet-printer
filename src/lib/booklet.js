@@ -5,6 +5,29 @@
 export const MIN_SPINE_GAP_MM = 0;
 export const MAX_SPINE_GAP_MM = 280;
 
+export const PAPER_SIZES = {
+  a4: {
+    id: 'a4',
+    label: 'A4',
+    sizeText: '297 × 210 mm',
+    sheetWidthMm: 297,
+    sheetHeightMm: 210,
+  },
+  long: {
+    id: 'long',
+    label: '长条纸',
+    sizeText: '210 × 420 mm',
+    sheetWidthMm: 420,
+    sheetHeightMm: 210,
+  },
+};
+
+export const DEFAULT_PAPER_SIZE = 'a4';
+
+export function normalizePaperSize(value) {
+  return PAPER_SIZES[value] ? value : DEFAULT_PAPER_SIZE;
+}
+
 export function normalizeSpineGap(value) {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) return MIN_SPINE_GAP_MM;

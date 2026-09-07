@@ -12,7 +12,7 @@ export default function Slot({
   if (slot.kind === 'blank') {
     return (
       <div
-        className={`slot slot-blank${anchor === 'left' ? ' anchor-left' : anchor === 'right' ? ' anchor-right' : ''}`}
+        className="slot slot-blank"
         style={{ width: boxWidth, height: boxHeight }}
       >
         <span className="slot-blank-label">空白页</span>

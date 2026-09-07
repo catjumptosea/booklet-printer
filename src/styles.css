@@ -436,6 +436,7 @@ button:disabled {
   border-radius: var(--radius);
   padding: 3px;
   gap: 3px;
+  margin-bottom: 18px;
 }
 
 .view-switch button {
@@ -552,12 +553,13 @@ button:disabled {
 
 /* ---------- 预览面板 ---------- */
 .preview-pane {
+  --preview-canvas-height: 560px;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   box-shadow: var(--shadow);
   padding: 20px 24px 24px;
-  min-height: 620px;
+  height: auto;
   min-width: 0;
   display: flex;
   flex-direction: column;
@@ -568,20 +570,6 @@ button:disabled {
   display: flex;
   flex-direction: column;
   min-width: 0;
-}
-
-.view-toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 10px;
-  margin-bottom: 18px;
-}
-
-.view-title {
-  font-size: 13.5px;
-  font-weight: 650;
 }
 
 .view-actions {
@@ -600,7 +588,7 @@ button:disabled {
 
 .jump-input {
   width: 58px;
-  height: 28px;
+  height: 26px;
   font: inherit;
   font-size: 12.5px;
   color: var(--ink);
@@ -626,7 +614,7 @@ button:disabled {
   align-items: center;
   justify-content: center;
   gap: 4px;
-  height: 28px;
+  height: 26px;
   font-size: 12px;
   color: var(--ink);
   background: var(--surface);
@@ -648,8 +636,8 @@ button:disabled {
 }
 
 .pager button {
-  width: 28px;
-  height: 28px;
+  width: 26px;
+  height: 26px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -671,8 +659,48 @@ button:disabled {
   text-align: center;
 }
 
+.fullscreen-button {
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--ink);
+  background: var(--surface);
+  transition: border-color 0.15s, color 0.15s;
+}
+
+.fullscreen-button:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.view-block:fullscreen {
+  background: #e9edf1;
+  padding: 16px 20px 18px;
+}
+
+.view-block:fullscreen .view-canvas {
+  height: auto;
+  flex: 1 1 auto;
+  padding: 0;
+}
+
+.view-block:fullscreen .view-footer {
+  justify-content: center;
+  margin-top: 8px;
+}
+
+.view-block:fullscreen .view-hint {
+  display: none;
+}
+
 .view-canvas {
-  flex: 1;
+  position: relative;
+  height: var(--preview-canvas-height);
+  flex: 0 0 auto;
   display: flex;
   justify-content: center;
   align-items: center;
@@ -681,9 +709,67 @@ button:disabled {
   padding: 24px 28px;
 }
 
-.view-hint {
+.view-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px 16px;
   margin-top: 16px;
-  text-align: center;
+}
+
+.view-hint {
+  flex: 1 1 auto;
+  min-width: 240px;
+  margin-top: 0;
+  text-align: left;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.render-progress-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  background: rgba(233, 237, 241, 0.82);
+  opacity: 0;
+  pointer-events: auto;
+  transition: opacity 0.18s ease;
+}
+
+.render-progress-overlay.visible {
+  opacity: 1;
+}
+
+.render-progress-overlay p {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.render-progress-track {
+  width: min(260px, 60%);
+  height: 5px;
+  overflow: hidden;
+  background: #d3dae1;
+  border-radius: 999px;
+}
+
+.render-progress-track span {
+  display: block;
+  width: 0;
+  height: 100%;
+  background: var(--accent);
+  border-radius: inherit;
+  transition: width 0.18s ease;
+}
+
+.render-progress-count {
   font-size: 12px;
   color: var(--muted);
 }
@@ -693,32 +779,55 @@ button:disabled {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 16px;
   background: #fbfcfd;
   border: 1px solid var(--border);
   border-radius: 4px;
   box-shadow: 0 2px 8px rgba(16, 24, 40, 0.08);
-  padding: 20px;
+  padding: 0;
   transform-origin: top center;
   flex-shrink: 0;
 }
 
+.sheet .slot {
+  border: 0;
+  border-radius: 0;
+}
+
 .fold-line {
+  position: relative;
   width: 0;
+  flex: 0 0 auto;
   align-self: stretch;
+  background:
+    linear-gradient(90deg, transparent 0%, rgba(233, 237, 241, 0.7) 50%, transparent 100%);
+  border-left: 0;
+}
+
+.fold-line::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 0;
+  bottom: 0;
   border-left: 1.5px dashed #c9d1d9;
 }
 
-/* ---------- 翻页视图 ---------- */
+/* ---------- 册子视图 ---------- */
 .flipbook-shell {
+  position: relative;
   width: 100%;
   height: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
+  overflow: hidden;
 }
 
 .flipbook-stage {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
   width: 100%;
   flex-shrink: 0;
 }
@@ -788,22 +897,21 @@ button:disabled {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  margin-top: 18px;
-  padding-top: 14px;
-  border-top: 1px solid var(--surface-2);
-  max-height: 76px;
+  margin-top: 16px;
+  min-height: 26px;
   overflow-y: auto;
 }
 
 .face-chip {
   min-width: 40px;
-  padding: 5px 8px;
   font-size: 12px;
+  line-height: 1;
   font-weight: 550;
   color: var(--muted);
   border: 1px solid var(--border);
   border-radius: 6px;
   background: var(--surface);
+  padding: 6px 8px;
 }
 
 .face-chip:hover {
@@ -840,7 +948,7 @@ button:disabled {
   }
 
   .preview-pane {
-    min-height: 480px;
+    --preview-canvas-height: 560px;
     padding: 16px;
   }
 

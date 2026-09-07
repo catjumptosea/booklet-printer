@@ -4,7 +4,7 @@ import Dropzone from './components/Dropzone';
 import SheetView from './components/SheetView';
 import FlipView from './components/FlipView';
 import ExportPanel from './components/ExportPanel';
-import { buildBookletPlan } from './lib/booklet';
+import { buildBookletPlan, MAX_SPINE_GAP_MM, normalizeSpineGap } from './lib/booklet';
 import { loadPdfDoc } from './lib/pdfjs';
 import { baseName, buildExportPdf } from './lib/exportPdf';
 
@@ -22,6 +22,7 @@ export default function App() {
   const [bytes, setBytes] = useState(null);
   const [pdfDoc, setPdfDoc] = useState(null);
   const [plan, setPlan] = useState(null);
+  const [spineGap, setSpineGap] = useState(0);
   const [blankInputs, setBlankInputs] = useState([]);
   const [view, setView] = useState('flip');
   const [exportMode, setExportMode] = useState('duplex');
@@ -36,6 +37,7 @@ export default function App() {
     setBytes(null);
     setPdfDoc(null);
     setPlan(null);
+    setSpineGap(0);
     setBlankInputs([]);
     setExportDone(null);
   }
@@ -66,6 +68,7 @@ export default function App() {
       setFileMeta({ name: file.name, size: file.size });
       const nextPlan = buildBookletPlan(doc.numPages);
       setPlan(nextPlan);
+      setSpineGap(0);
       setBlankInputs(nextPlan.blankPositions.map(String));
       setView('flip');
       setStatus('ready');
@@ -97,13 +100,13 @@ export default function App() {
     try {
       const base = baseName(fileMeta.name);
       if (exportMode === 'duplex') {
-        const data = await buildExportPdf(bytes, plan, 'duplex');
+        const data = await buildExportPdf(bytes, plan, 'duplex', spineGap);
         download(data, `${base}-booklet-duplex.pdf`);
       } else {
-        const front = await buildExportPdf(bytes, plan, 'front');
+        const front = await buildExportPdf(bytes, plan, 'front', spineGap);
         download(front, `${base}-booklet-front.pdf`);
         await new Promise((r) => setTimeout(r, 600));
-        const back = await buildExportPdf(bytes, plan, 'back');
+        const back = await buildExportPdf(bytes, plan, 'back', spineGap);
         download(back, `${base}-booklet-back.pdf`);
       }
       setExportDone(exportMode);
@@ -149,6 +152,15 @@ export default function App() {
       itemIndex === index ? String(parsedPosition) : item
     )));
     setExportDone(null);
+  }
+
+  function handleSpineGapChange(event) {
+    const value = event.target.value;
+    setSpineGap(value === '' ? '' : Number(value));
+  }
+
+  function commitSpineGap() {
+    setSpineGap((current) => normalizeSpineGap(current));
   }
 
   return (
@@ -208,6 +220,28 @@ export default function App() {
                   <span className="stat-label">A4 纸张</span>
                   <span className="stat-value">{plan.sheets} 张</span>
                 </div>
+                <div className="stat stat-wide">
+                  <span className="stat-label">书脊间距</span>
+                  <div className="stat-input-group">
+                    <input
+                      className="stat-input"
+                      type="number"
+                      inputMode="decimal"
+                      min="0"
+                      max={MAX_SPINE_GAP_MM}
+                      step="0.5"
+                      value={spineGap}
+                      aria-label="书脊间距"
+                      title="折页处两页内容之间预留的折叠区域宽度"
+                      onChange={handleSpineGapChange}
+                      onBlur={commitSpineGap}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter') event.currentTarget.blur();
+                      }}
+                    />
+                    <span className="stat-suffix">mm</span>
+                  </div>
+                </div>
               </div>
               {plan.blankCount > 0 && (
                 <div className="blank-position-list">
@@ -253,6 +287,17 @@ export default function App() {
               )}
             </section>
 
+            <ExportPanel
+              plan={plan}
+              exportMode={exportMode}
+              onModeChange={setExportMode}
+              onExport={handleExport}
+              exporting={exporting}
+              exportDone={exportDone}
+            />
+          </aside>
+
+          <section className="preview-pane">
             <div className="view-switch" role="tablist" aria-label="预览视图">
               <button
                 type="button"
@@ -262,7 +307,7 @@ export default function App() {
                 onClick={() => setView('flip')}
               >
                 <BookOpenCheck size={14} />
-                翻页视图
+                册子视图
               </button>
               <button
                 type="button"
@@ -275,22 +320,10 @@ export default function App() {
                 纸张视图
               </button>
             </div>
-
-            <ExportPanel
-              plan={plan}
-              exportMode={exportMode}
-              onModeChange={setExportMode}
-              onExport={handleExport}
-              exporting={exporting}
-              exportDone={exportDone}
-            />
-          </aside>
-
-          <section className="preview-pane">
             {view === 'sheet' ? (
-              <SheetView pdfDoc={pdfDoc} plan={plan} />
+              <SheetView pdfDoc={pdfDoc} plan={plan} spineGap={spineGap} />
             ) : (
-              <FlipView pdfDoc={pdfDoc} plan={plan} />
+              <FlipView pdfDoc={pdfDoc} plan={plan} spineGap={spineGap} />
             )}
           </section>
         </main>

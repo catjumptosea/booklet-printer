@@ -2,6 +2,15 @@
 //   正面：左 = N' - 2i + 2，右 = 2i - 1
 //   反面：左 = 2i，右 = N' - 2i + 1
 // 空白页数量由 4 的倍数规则自动决定；每个空白页可指定成册后的页码。
+export const MIN_SPINE_GAP_MM = 0;
+export const MAX_SPINE_GAP_MM = 280;
+
+export function normalizeSpineGap(value) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return MIN_SPINE_GAP_MM;
+  return Math.min(MAX_SPINE_GAP_MM, Math.max(MIN_SPINE_GAP_MM, parsed));
+}
+
 export function buildBookletPlan(originalPageCount, blankPositionsOverride) {
   const blankCount = (4 - (originalPageCount % 4)) % 4;
   const total = originalPageCount + blankCount;

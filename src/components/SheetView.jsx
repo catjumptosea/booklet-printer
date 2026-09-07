@@ -1,13 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
 import Slot from './Slot';
+import { MAX_SPINE_GAP_MM } from '../lib/booklet';
 
 const SLOT_W = 280;
 const SLOT_H = 396;
-const SHEET_W = SLOT_W * 2 + 56;
-const SHEET_H = SLOT_H + 40;
+const SHEET_H = SLOT_H;
+const A4_WIDTH_MM = 297;
+const SHEET_W = SLOT_W * 2;
+const MM_TO_PX = SHEET_W / A4_WIDTH_MM;
 
-export default function SheetView({ pdfDoc, plan }) {
+export default function SheetView({ pdfDoc, plan, spineGap = 0 }) {
   const faces = useMemo(() => {
     const list = [];
     for (const sheet of plan.plan) {
@@ -20,16 +22,20 @@ export default function SheetView({ pdfDoc, plan }) {
   const [index, setIndex] = useState(0);
   const wrapRef = useRef(null);
   const [scale, setScale] = useState(1);
+  const clampedSpineGap = Math.min(MAX_SPINE_GAP_MM, Math.max(0, Number(spineGap) || 0));
+  const spineGapPx = clampedSpineGap * MM_TO_PX;
+  const slotWidth = Math.max(0, (SHEET_W - spineGapPx) / 2);
+  const sheetWidth = SHEET_W;
 
   useEffect(() => {
     const el = wrapRef.current;
     if (!el) return undefined;
-    const update = () => setScale(Math.min(1, el.clientWidth / (SHEET_W + 16)));
+    const update = () => setScale(Math.min(1, el.clientWidth / (sheetWidth + 16)));
     update();
     const ro = new ResizeObserver(update);
     ro.observe(el);
     return () => ro.disconnect();
-  }, []);
+  }, [sheetWidth]);
 
   useEffect(() => {
     const onKey = (e) => {
@@ -45,32 +51,12 @@ export default function SheetView({ pdfDoc, plan }) {
 
   return (
     <div className="view-block">
-      <div className="view-toolbar">
-        <span className="view-title">
-          第 {current.sheet.index} 张 · {current.side === 'front' ? '正面' : '反面'}
-        </span>
-        <div className="pager">
-          <button type="button" onClick={() => setIndex((v) => Math.max(0, v - 1))} disabled={index === 0} aria-label="上一面">
-            <ChevronLeft size={16} />
-          </button>
-          <span className="pager-count">{index + 1} / {faces.length}</span>
-          <button
-            type="button"
-            onClick={() => setIndex((v) => Math.min(faces.length - 1, v + 1))}
-            disabled={index === faces.length - 1}
-            aria-label="下一面"
-          >
-            <ChevronRight size={16} />
-          </button>
-        </div>
-      </div>
-
       <div className="view-canvas" ref={wrapRef}>
         <div style={{ height: SHEET_H * scale }}>
-          <div className="sheet" style={{ width: SHEET_W, height: SHEET_H, transform: `scale(${scale})` }}>
-            <Slot pdfDoc={pdfDoc} slot={face.left} boxWidth={SLOT_W} boxHeight={SLOT_H} badgeSide="left" />
-            <div className="fold-line" />
-            <Slot pdfDoc={pdfDoc} slot={face.right} boxWidth={SLOT_W} boxHeight={SLOT_H} badgeSide="right" />
+          <div className="sheet" style={{ width: sheetWidth, height: SHEET_H, transform: `scale(${scale})` }}>
+            <Slot pdfDoc={pdfDoc} slot={face.left} boxWidth={slotWidth} boxHeight={SLOT_H} badgeSide="left" />
+            <div className="fold-line" style={{ width: spineGapPx }} />
+            <Slot pdfDoc={pdfDoc} slot={face.right} boxWidth={slotWidth} boxHeight={SLOT_H} badgeSide="right" />
           </div>
         </div>
       </div>

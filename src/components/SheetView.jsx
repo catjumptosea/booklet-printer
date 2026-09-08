@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
 import Slot from './Slot';
 import { BOOKLET_FORMATS, getSheetLayout, MAX_SPINE_GAP_MM, PAPER_SIZES } from '../lib/booklet';
 
@@ -146,6 +147,26 @@ export default function SheetView({
             )}
           </div>
         </div>
+        <button
+          type="button"
+          className="sheet-nav-button sheet-nav-prev"
+          onClick={() => setIndex((value) => Math.max(0, value - 1))}
+          disabled={index === 0}
+          aria-label="上一张纸"
+          title="上一张纸"
+        >
+          <ChevronLeft size={22} />
+        </button>
+        <button
+          type="button"
+          className="sheet-nav-button sheet-nav-next"
+          onClick={() => setIndex((value) => Math.min(faces.length - 1, value + 1))}
+          disabled={index === faces.length - 1}
+          aria-label="下一张纸"
+          title="下一张纸"
+        >
+          <ChevronRight size={22} />
+        </button>
       </div>
 
       <div className="face-strip" role="tablist" aria-label="纸张面列表">

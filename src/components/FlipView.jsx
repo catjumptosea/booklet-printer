@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { PageFlip } from 'page-flip';
-import { ChevronLeft, ChevronRight, CornerDownLeft, Maximize, Minimize } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Maximize, Minimize } from 'lucide-react';
 import { getSheetLayout, PAPER_SIZES } from '../lib/booklet';
 
 const MAX_HIGH_RES_PAGE_WIDTH = 1800;
@@ -718,6 +718,27 @@ export default function FlipView({
     return () => document.removeEventListener('fullscreenchange', onFullscreenChange);
   }, [handleFullscreenChange]);
 
+  useEffect(() => {
+    if (!isFullscreen) return undefined;
+
+    const refreshFullscreenLayout = () => {
+      window.requestAnimationFrame(() => {
+        const pageFlip = pageFlipRef.current;
+        if (!pageFlip) return;
+        applyIntegerPageGeometry(pageFlip, spineGap, geometry);
+        pageFlip.getUI()?.update();
+      });
+    };
+    const orientation = window.screen?.orientation;
+    orientation?.addEventListener?.('change', refreshFullscreenLayout);
+    window.addEventListener('resize', refreshFullscreenLayout);
+
+    return () => {
+      orientation?.removeEventListener?.('change', refreshFullscreenLayout);
+      window.removeEventListener('resize', refreshFullscreenLayout);
+    };
+  }, [geometry, isFullscreen, spineGap]);
+
   const goTo = useCallback((delta) => {
     const pageFlip = pageFlipRef.current;
     if (!pageFlip || flipping) return;
@@ -963,8 +984,7 @@ export default function FlipView({
               disabled={!ready || flipping || highResRender.active || jumpValue === ''}
               aria-label="跳转页码"
             >
-              <CornerDownLeft size={14} />
-              跳转
+              GO
             </button>
           </form>
           <div className="pager">

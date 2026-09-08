@@ -850,6 +850,16 @@ input[type="number"]::-webkit-inner-spin-button {
   color: var(--ink);
 }
 
+.mode-guide {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.mode-guide strong {
+  color: var(--accent);
+}
+
 .guide-list {
   margin: 0 0 12px 18px;
   font-size: 12.5px;
@@ -1316,6 +1326,13 @@ input[type="number"]::-webkit-inner-spin-button {
   line-height: 24px;
 }
 
+.brand-version {
+  margin-left: 4px;
+  color: var(--muted);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+}
+
 .brand-sub,
 .topbar-note,
 .dropzone-hint,
@@ -1395,7 +1412,7 @@ input[type="number"]::-webkit-inner-spin-button {
 }
 
 .workspace {
-  gap: var(--space-lg);
+  gap: var(--space-md);
 }
 
 .sidebar {
@@ -1581,6 +1598,11 @@ input[type="number"]::-webkit-inner-spin-button {
 .mode-switch button svg {
   width: 18px;
   height: 18px;
+}
+
+.mode-switch button small {
+  font-size: 12px;
+  line-height: 18px;
 }
 
 .mode-switch button.active {

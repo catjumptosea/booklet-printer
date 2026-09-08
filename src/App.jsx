@@ -2,6 +2,7 @@ import { useRef, useState } from 'react';
 import { Alert, Divider, InputNumber, Segmented, Tooltip } from 'antd';
 import { AlertTriangle, BookOpenCheck, Info, Layers, Loader2, RotateCcw, ShieldCheck, X } from 'lucide-react';
 import 'antd/dist/reset.css';
+import packageJson from '../package.json';
 import Dropzone from './components/Dropzone';
 import SheetView from './components/SheetView';
 import FlipView from './components/FlipView';
@@ -130,13 +131,13 @@ export default function App() {
       const base = baseName(fileMeta.name);
       if (exportMode === 'duplex') {
         const data = await buildExportPdf(exportBytes, exportPlan, 'duplex', activeSpineGap, exportOptions);
-        download(data, `${base}-booklet-${activeBookletFormat}-duplex.pdf`);
+        download(data, `${base}-小册子-${activeBookletFormat.toUpperCase()}-自动双面.pdf`);
       } else {
         const front = await buildExportPdf(exportBytes, exportPlan, 'front', activeSpineGap, exportOptions);
-        download(front, `${base}-booklet-${activeBookletFormat}-front.pdf`);
+        download(front, `${base}-小册子-${activeBookletFormat.toUpperCase()}-正面.pdf`);
         await new Promise((r) => setTimeout(r, 600));
         const back = await buildExportPdf(exportBytes, exportPlan, 'back', activeSpineGap, exportOptions);
-        download(back, `${base}-booklet-${activeBookletFormat}-back.pdf`);
+        download(back, `${base}-小册子-${activeBookletFormat.toUpperCase()}-反面.pdf`);
       }
       setExportDone(exportMode);
     } catch (err) {
@@ -238,7 +239,9 @@ export default function App() {
             <BookOpenCheck size={18} strokeWidth={2} />
           </div>
           <div className="brand-text">
-            <span className="brand-name">Booklet Press</span>
+            <span className="brand-name">
+              Booklet Press <small className="brand-version">v{packageJson.version}</small>
+            </span>
             <span className="brand-sub">PDF 小册子打印</span>
           </div>
         </div>
@@ -301,7 +304,7 @@ export default function App() {
                 </div>
                 <div className="file-meta-item">
                   <span>{activePaper.label} 纸张</span>
-                  <strong>{plan.sheets} 张</strong>
+                  <strong>{plan.sheets}</strong>
                 </div>
               </div>
               <div className="stat stat-wide paper-size-stat antd-form-item">

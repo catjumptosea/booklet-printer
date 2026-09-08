@@ -4,7 +4,6 @@ import { PAPER_SIZES } from '../lib/booklet';
 export default function ExportPanel({
   plan,
   paperSize = 'a4',
-  bookletFormat = 'a5',
   exportMode,
   onModeChange,
   onExport,
@@ -12,7 +11,7 @@ export default function ExportPanel({
   exportDone,
 }) {
   const paper = PAPER_SIZES[paperSize] || PAPER_SIZES.a4;
-  const isA6 = bookletFormat === 'a6';
+  const paperLabel = paper.label === 'A4' ? 'A4纸' : paper.label;
 
   return (
     <section className="card export-card">
@@ -26,7 +25,8 @@ export default function ExportPanel({
           onClick={() => onModeChange('duplex')}
         >
           <Printer size={15} strokeWidth={2} />
-          双面打印 · 1 个 PDF
+          <span>自动双面</span>
+          <small>1 个 PDF</small>
         </button>
         <button
           type="button"
@@ -36,34 +36,31 @@ export default function ExportPanel({
           onClick={() => onModeChange('separate')}
         >
           <Files size={15} strokeWidth={2} />
-          手动双面 · 2 个 PDF
+          <span>手动双面</span>
+          <small>2 个 PDF</small>
         </button>
       </div>
 
       {exportMode === 'duplex' ? (
-        <p className="mode-tip">
-          页序：纸1正、纸1反、纸2正、纸2反……打印时选择「双面打印 +
-          <strong>{isA6 ? '短边翻转' : '短边翻转'}</strong>」，缩放 100%。
-        </p>
+        <div className="mode-tip mode-guide">
+          <strong>适合支持自动双面打印的打印机</strong>
+          <span>导出为 1 个 PDF 文件，使用机器对应的「双面打印」功能即可，打印机会自动翻面。</span>
+        </div>
       ) : (
-        <ol className="guide-list">
-          <li>先打印「正面文件」：实际大小（100%）、单面打印；</li>
-          <li>取出纸张，像翻书一样<strong>左右翻面</strong>（上下方向不变），放回进纸器；</li>
-          <li>再打印「反面文件」，设置相同；</li>
-          {isA6 ? (
-            <li>
-              每张 A4 纸<strong>先沿水平中线裁成上下两半</strong>，再沿<strong>短边中线对折</strong>；把上半裁片放进下半裁片，按纸张顺序叠放，从折缝处骑马订。
-            </li>
-          ) : (
-            <li>按纸张顺序叠放，沿中线对折，装订。</li>
-          )}
-        </ol>
+        <div className="mode-tip mode-guide">
+          <strong>适合不支持自动双面打印的打印机</strong>
+          <span>导出为 2 个 PDF 文件，先打印“正面”文件，然后将纸张按提示放回纸盒，再打印“反面”文件，完成双面打印。</span>
+        </div>
       )}
 
       <button type="button" className="btn-primary" onClick={onExport} disabled={exporting}>
         {exporting ? <Loader2 size={16} className="spin" /> : <Download size={16} />}
         {exporting ? '正在生成…' : exportMode === 'duplex' ? '导出双面打印 PDF' : '导出正/反面 2 个 PDF'}
       </button>
+
+      <p className="export-meta">
+        共需 {plan.sheets} 张 {paperLabel} · {paper.sizeText}
+      </p>
 
       {exportDone && (
         <p className="done-note">
@@ -76,9 +73,6 @@ export default function ExportPanel({
           不同打印机进纸方向可能不同，建议先用 2 张纸试印；如果反面方向反了，把纸旋转 180 度再放回。
         </p>
       )}
-      <p className="export-meta">
-        共 {plan.sheets} 张 {paper.label}纸 · {paper.sizeText}
-      </p>
     </section>
   );
 }

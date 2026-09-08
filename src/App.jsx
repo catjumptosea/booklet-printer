@@ -1,5 +1,7 @@
 import { useRef, useState } from 'react';
-import { AlertTriangle, BookOpenCheck, Layers, Loader2, RotateCcw, ShieldCheck, X } from 'lucide-react';
+import { Alert, Divider, InputNumber, Segmented, Tooltip } from 'antd';
+import { AlertTriangle, BookOpenCheck, Info, Layers, Loader2, RotateCcw, ShieldCheck, X } from 'lucide-react';
+import 'antd/dist/reset.css';
 import Dropzone from './components/Dropzone';
 import SheetView from './components/SheetView';
 import FlipView from './components/FlipView';
@@ -35,6 +37,7 @@ export default function App() {
   const [paperSize, setPaperSize] = useState('a4');
   const [bookletFormat, setBookletFormat] = useState(DEFAULT_BOOKLET_FORMAT);
   const [spineGap, setSpineGap] = useState(0);
+  const [spineGapDraft, setSpineGapDraft] = useState(0);
   const [blankInputs, setBlankInputs] = useState([]);
   const [view, setView] = useState('flip');
   const [exportMode, setExportMode] = useState('duplex');
@@ -83,6 +86,7 @@ export default function App() {
       const nextPlan = buildBookletPlan(doc.numPages, undefined, activeBookletFormat);
       setPlan(nextPlan);
       setSpineGap(0);
+      setSpineGapDraft(0);
       setBlankInputs(nextPlan.blankPositions.map(String));
       setBookletFormat(nextPlan.format);
       setStatus('ready');
@@ -144,11 +148,14 @@ export default function App() {
 
   const ready = status === 'ready' && plan && pdfDoc;
 
-  function handleBlankPositionChange(index, event) {
-    const value = event.target.value;
-    setBlankInputs((current) => current.map((item, itemIndex) => (
-      itemIndex === index ? value : item
-    )));
+  function handleBlankPositionChange(index, value) {
+    const nextValue = value == null ? '' : String(value);
+    setBlankInputs((current) => {
+      if (current[index] === nextValue) return current;
+      return current.map((item, itemIndex) => (
+        itemIndex === index ? nextValue : item
+      ));
+    });
   }
 
   function commitBlankPosition(index) {
@@ -168,6 +175,8 @@ export default function App() {
       return;
     }
 
+    if (plan.blankPositions[index] === parsedPosition) return;
+
     const nextPositions = plan.blankPositions.map((position, positionIndex) => (
       positionIndex === index ? parsedPosition : position
     ));
@@ -179,14 +188,19 @@ export default function App() {
     setExportDone(null);
   }
 
-  function handleSpineGapChange(event) {
-    const value = event.target.value;
-    setSpineGap(value === '' ? '' : Number(value));
-    setExportDone(null);
+  function handleSpineGapChange(value) {
+    const nextValue = value == null ? '' : Number(value);
+    setSpineGapDraft((current) => current === nextValue ? current : nextValue);
   }
 
   function commitSpineGap() {
-    setSpineGap((current) => normalizeSpineGap(current));
+    const nextValue = normalizeSpineGap(spineGapDraft);
+    if (nextValue === spineGap) {
+      if (spineGapDraft !== nextValue) setSpineGapDraft(nextValue);
+      return;
+    }
+    setSpineGap(nextValue);
+    setSpineGapDraft(nextValue);
     setExportDone(null);
   }
 
@@ -200,6 +214,7 @@ export default function App() {
       setPlan(nextPlan);
       setBlankInputs(nextPlan.blankPositions.map(String));
       setSpineGap(0);
+      setSpineGapDraft(0);
     }
     setExportDone(null);
   }
@@ -211,6 +226,7 @@ export default function App() {
     setPlan(nextPlan);
     setBlankInputs(nextPlan.blankPositions.map(String));
     setSpineGap(0);
+    setSpineGapDraft(0);
     setExportDone(null);
   }
 
@@ -248,6 +264,7 @@ export default function App() {
         <main className="workspace">
           <aside className="sidebar">
             <section className="card">
+              <div className="form-section">
               <div className="file-row">
                 <div className="file-info">
                   <span className="file-name" title={fileMeta.name}>{fileMeta.name}</span>
@@ -273,114 +290,127 @@ export default function App() {
                   {changingFile ? '替换中' : '换文件'}
                 </button>
               </div>
-              <div className="stat stat-wide paper-size-stat">
-                <span className="stat-label">纸张尺寸</span>
-                <div className="paper-size-switch" role="radiogroup" aria-label="纸张尺寸">
-                  {Object.values(PAPER_SIZES).map((paper) => (
-                    <button
-                      key={paper.id}
-                      type="button"
-                      role="radio"
-                      aria-checked={activePaperSize === paper.id}
-                      className={activePaperSize === paper.id ? 'active' : ''}
-                      onClick={() => handlePaperSizeChange(paper.id)}
-                    >
-                      <span>{paper.label}</span>
-                      <small>{paper.sizeText}</small>
-                    </button>
-                  ))}
+              <div className="file-meta-strip" aria-label="文件统计">
+                <div className="file-meta-item">
+                  <span>原始页数</span>
+                  <strong>{plan.originalPageCount}</strong>
+                </div>
+                <div className="file-meta-item">
+                  <span>总页数</span>
+                  <strong>{plan.total}</strong>
+                </div>
+                <div className="file-meta-item">
+                  <span>{activePaper.label} 纸张</span>
+                  <strong>{plan.sheets} 张</strong>
                 </div>
               </div>
+              <div className="stat stat-wide paper-size-stat antd-form-item">
+                <span className="stat-label">纸张尺寸</span>
+                <Segmented
+                  block
+                  size="large"
+                  className="paper-size-segmented"
+                  aria-label="纸张尺寸"
+                  value={activePaperSize}
+                  onChange={handlePaperSizeChange}
+                  options={Object.values(PAPER_SIZES).map((paper) => ({
+                    label: <span className="segmented-option"><strong>{paper.label}</strong><small>{paper.sizeText}</small></span>,
+                    value: paper.id,
+                  }))}
+                />
+              </div>
               {activePaperSize === 'a4' && (
-                <div className="stat stat-wide paper-size-stat">
+                <div className="stat stat-wide paper-size-stat antd-form-item">
                   <span className="stat-label">小册子格式</span>
-                  <div className="paper-size-switch" role="radiogroup" aria-label="小册子格式">
-                    {Object.values(BOOKLET_FORMATS).map((format) => (
-                      <button
-                        key={format.id}
-                        type="button"
-                        role="radio"
-                        aria-checked={activeBookletFormat === format.id}
-                        className={activeBookletFormat === format.id ? 'active' : ''}
-                        onClick={() => handleBookletFormatChange(format.id)}
-                      >
-                        <span>{format.label}</span>
-                      </button>
-                    ))}
-                  </div>
+                  <Segmented
+                    block
+                    size="large"
+                    className="paper-size-segmented"
+                    aria-label="小册子格式"
+                    value={activeBookletFormat}
+                    onChange={handleBookletFormatChange}
+                    options={Object.values(BOOKLET_FORMATS).map((format) => ({
+                      label: <span className="segmented-option segmented-option-simple"><strong>{format.label}</strong></span>,
+                      value: format.id,
+                    }))}
+                  />
                 </div>
               )}
-              <div className="stat-grid">
-                <div className="stat">
-                  <span className="stat-label">原始页数</span>
-                  <span className="stat-value">{plan.originalPageCount}</span>
-                </div>
-                <div className="stat">
-                  <span className="stat-label">总页数</span>
-                  <span className="stat-value">{plan.total}</span>
-                </div>
-                <div className="stat">
-                  <span className="stat-label">{activePaper.label} 纸张</span>
-                  <span className="stat-value">{plan.sheets} 张</span>
-                </div>
-                <div className="stat stat-wide">
+              <div className="setting-row spine-row">
+                <label className="stat-label" htmlFor="spine-gap">书脊间距</label>
+                <Tooltip title="折页处两页内容之间预留的折叠区域宽度">
+                  <span className="field-help" role="img" aria-label="书脊间距说明">
+                    <Info size={13} />
+                  </span>
+                </Tooltip>
+                <InputNumber
+                  id="spine-gap"
+                  className="stat-input-number"
+                  min={0}
+                  max={MAX_SPINE_GAP_MM}
+                  step={1}
+                  value={spineGapDraft === '' ? null : spineGapDraft}
+                  aria-label="书脊间距"
+                  addonAfter="mm"
+                  onChange={handleSpineGapChange}
+                  onBlur={commitSpineGap}
+                />
+              </div>
+              </div>
+              <div className="form-section editable-section legacy-spine-section">
+                <div className="stat stat-wide editable-stat">
                   <span className="stat-label">书脊间距</span>
-                  <div className="stat-input-group">
-                    <input
-                      className="stat-input"
-                      type="number"
-                      inputMode="decimal"
-                      min="0"
-                      max={MAX_SPINE_GAP_MM}
-                      step="0.5"
-                      value={spineGap}
-                      aria-label="书脊间距"
-                      title="折页处两页内容之间预留的折叠区域宽度"
-                      onChange={handleSpineGapChange}
-                      onBlur={commitSpineGap}
-                      onKeyDown={(event) => {
-                        if (event.key === 'Enter') event.currentTarget.blur();
-                      }}
-                    />
-                    <span className="stat-suffix">mm</span>
-                  </div>
+                  <InputNumber
+                    className="stat-input-number"
+                    min={0}
+                    max={MAX_SPINE_GAP_MM}
+                    step={1}
+                    value={spineGapDraft === '' ? null : spineGapDraft}
+                    aria-label="书脊间距"
+                    title="折页处两页内容之间预留的折叠区域宽度"
+                    addonAfter="mm"
+                    onChange={handleSpineGapChange}
+                    onBlur={commitSpineGap}
+                  />
                 </div>
               </div>
               {plan.blankCount > 0 && (
+                <div className="blank-config">
+                  <div className="blank-divider" aria-hidden="true" />
+                  <Alert
+                    className="blank-config-intro"
+                    type="info"
+                    showIcon
+                    message={`已自动补充 ${plan.blankCount} 页空白页，可调整其作为成册第 N 页的位置。`}
+                  />
                 <div className="blank-position-list">
                   {plan.blankPositions.map((position, index) => (
                     <div className="blank-position-row" key={`${position}-${index}`}>
                       <label className="stat-label" htmlFor={`blank-position-${index}`}>
                         空白页 {index + 1}
                       </label>
+                      <Tooltip title="输入该空白页作为成册的第 N 页">
+                        <span className="field-help" role="img" aria-label="作为成册的第 N 页说明">
+                          <Info size={13} />
+                        </span>
+                      </Tooltip>
                       <div className="blank-input-group">
-                        <input
+                        <InputNumber
                           id={`blank-position-${index}`}
-                          className="blank-input"
-                          type="number"
-                          inputMode="numeric"
-                          min="1"
+                          className="blank-input-number"
+                          min={1}
                           max={plan.total}
-                          step="1"
-                          value={blankInputs[index] ?? String(position)}
-                          onChange={(event) => handleBlankPositionChange(index, event)}
+                          step={1}
+                          value={blankInputs[index] ?? position}
+                          addonAfter="页"
+                          onChange={(value) => handleBlankPositionChange(index, value)}
                           onBlur={() => commitBlankPosition(index)}
-                          onKeyDown={(event) => {
-                            if (event.key === 'Enter') event.currentTarget.blur();
-                          }}
-                          title="作为成册后的第 N 页"
                         />
-                        <span className="stat-suffix">页</span>
                       </div>
                     </div>
                   ))}
                 </div>
-              )}
-              {plan.blankCount > 0 && (
-                <p className="warn-note">
-                  <AlertTriangle size={13} />
-                  已自动补充 {plan.blankCount} 页空白
-                </p>
+                </div>
               )}
               {plan.originalPageCount > 300 && (
                 <p className="warn-note">
@@ -390,16 +420,6 @@ export default function App() {
               )}
             </section>
 
-            <ExportPanel
-              plan={plan}
-              paperSize={activePaperSize}
-              bookletFormat={activeBookletFormat}
-              exportMode={exportMode}
-              onModeChange={setExportMode}
-              onExport={handleExport}
-              exporting={exporting}
-              exportDone={exportDone}
-            />
           </aside>
 
           <section className="preview-pane">
@@ -443,6 +463,19 @@ export default function App() {
               />
             )}
           </section>
+
+          <aside className="export-sidebar">
+            <ExportPanel
+              plan={plan}
+              paperSize={activePaperSize}
+              bookletFormat={activeBookletFormat}
+              exportMode={exportMode}
+              onModeChange={setExportMode}
+              onExport={handleExport}
+              exporting={exporting}
+              exportDone={exportDone}
+            />
+          </aside>
         </main>
       )}
     </div>

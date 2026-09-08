@@ -65,7 +65,7 @@ export function getSheetLayout(paperSize, bookletFormat = DEFAULT_BOOKLET_FORMAT
 export function normalizeSpineGap(value) {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) return MIN_SPINE_GAP_MM;
-  return Math.min(MAX_SPINE_GAP_MM, Math.max(MIN_SPINE_GAP_MM, parsed));
+  return Math.min(MAX_SPINE_GAP_MM, Math.max(MIN_SPINE_GAP_MM, Math.round(parsed)));
 }
 
 export function buildBookletPlan(

@@ -1,7 +1,7 @@
 {
   "name": "booklet-printer",
   "private": true,
-  "version": "1.4.0",
+  "version": "1.5.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -9,6 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "antd": "^6.6.2",
     "lucide-react": "latest",
     "page-flip": "^2.0.7",
     "pdf-lib": "^1.17.1",

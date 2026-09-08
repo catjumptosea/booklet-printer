@@ -941,10 +941,6 @@ export default function FlipView({
       </div>
 
       <div className="view-footer">
-        <div className="paper-size-note">
-          <span>{geometry.paper.label}</span>
-          <span>{geometry.paper.sizeText}</span>
-        </div>
         <p className="view-hint">按成册翻阅顺序预览；空白页会保留在打印文件中。</p>
         <div className="view-actions">
           <form className="jump" onSubmit={submitJump}>

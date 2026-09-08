@@ -148,12 +148,6 @@ export default function SheetView({
         </div>
       </div>
 
-      <div className="paper-size-note">
-        <span>{paper.label}</span>
-        <span>{formatLabel}</span>
-        <span>{paperSizeText}</span>
-      </div>
-
       <div className="face-strip" role="tablist" aria-label="纸张面列表">
         {faces.map((f, i) => (
           <button

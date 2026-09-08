@@ -8,6 +8,7 @@ export default function Slot({
   boxHeight,
   badgeSide = 'right',
   anchor = 'center',
+  forceLandscape = false,
 }) {
   if (slot.kind === 'blank') {
     return (
@@ -24,7 +25,14 @@ export default function Slot({
       className={`slot${anchor === 'left' ? ' anchor-left' : anchor === 'right' ? ' anchor-right' : ''}`}
       style={{ width: boxWidth, height: boxHeight }}
     >
-      <PageCanvas pdfDoc={pdfDoc} pageNumber={slot.sourcePage} boxWidth={boxWidth} boxHeight={boxHeight} />
+      <PageCanvas
+        pdfDoc={pdfDoc}
+        pageNumber={slot.sourcePage}
+        boxWidth={boxWidth}
+        boxHeight={boxHeight}
+        forceLandscape={forceLandscape}
+        contentAnchor={anchor}
+      />
       <span className={`slot-badge badge-${badgeSide}`}>P{slot.sourcePage}</span>
     </div>
   );

@@ -5,8 +5,11 @@ import SheetView from './components/SheetView';
 import FlipView from './components/FlipView';
 import ExportPanel from './components/ExportPanel';
 import {
+  BOOKLET_FORMATS,
   buildBookletPlan,
+  DEFAULT_BOOKLET_FORMAT,
   MAX_SPINE_GAP_MM,
+  normalizeBookletFormat,
   normalizePaperSize,
   normalizeSpineGap,
   PAPER_SIZES,
@@ -30,6 +33,7 @@ export default function App() {
   const [pdfDoc, setPdfDoc] = useState(null);
   const [plan, setPlan] = useState(null);
   const [paperSize, setPaperSize] = useState('a4');
+  const [bookletFormat, setBookletFormat] = useState(DEFAULT_BOOKLET_FORMAT);
   const [spineGap, setSpineGap] = useState(0);
   const [blankInputs, setBlankInputs] = useState([]);
   const [view, setView] = useState('flip');
@@ -39,6 +43,9 @@ export default function App() {
   const [changingFile, setChangingFile] = useState(false);
   const activeSpineGap = normalizeSpineGap(spineGap);
   const activePaperSize = normalizePaperSize(paperSize);
+  const activeBookletFormat = activePaperSize === 'a4'
+    ? normalizeBookletFormat(bookletFormat)
+    : 'a5';
   const activePaper = PAPER_SIZES[activePaperSize];
 
   async function handleFile(file) {
@@ -73,10 +80,11 @@ export default function App() {
       setBytes(exportBytes);
       setPdfDoc(doc);
       setFileMeta({ name: file.name, size: file.size });
-      const nextPlan = buildBookletPlan(doc.numPages);
+      const nextPlan = buildBookletPlan(doc.numPages, undefined, activeBookletFormat);
       setPlan(nextPlan);
       setSpineGap(0);
       setBlankInputs(nextPlan.blankPositions.map(String));
+      setBookletFormat(nextPlan.format);
       setStatus('ready');
     } catch (err) {
       if (err?.name === 'PasswordException') {
@@ -96,6 +104,13 @@ export default function App() {
     if (!bytes || !plan || exporting) return;
     setExporting(true);
     setError(null);
+    setExportDone(null);
+    const exportBytes = bytes.slice();
+    const exportPlan = structuredClone(plan);
+    const exportOptions = {
+      paperSize: activePaperSize,
+      bookletFormat: activeBookletFormat,
+    };
     const download = (data, name) => {
       const blob = new Blob([data], { type: 'application/pdf' });
       const url = URL.createObjectURL(blob);
@@ -110,14 +125,14 @@ export default function App() {
     try {
       const base = baseName(fileMeta.name);
       if (exportMode === 'duplex') {
-        const data = await buildExportPdf(bytes, plan, 'duplex', activeSpineGap, { paperSize: activePaperSize });
-        download(data, `${base}-booklet-duplex.pdf`);
+        const data = await buildExportPdf(exportBytes, exportPlan, 'duplex', activeSpineGap, exportOptions);
+        download(data, `${base}-booklet-${activeBookletFormat}-duplex.pdf`);
       } else {
-        const front = await buildExportPdf(bytes, plan, 'front', activeSpineGap, { paperSize: activePaperSize });
-        download(front, `${base}-booklet-front.pdf`);
+        const front = await buildExportPdf(exportBytes, exportPlan, 'front', activeSpineGap, exportOptions);
+        download(front, `${base}-booklet-${activeBookletFormat}-front.pdf`);
         await new Promise((r) => setTimeout(r, 600));
-        const back = await buildExportPdf(bytes, plan, 'back', activeSpineGap, { paperSize: activePaperSize });
-        download(back, `${base}-booklet-back.pdf`);
+        const back = await buildExportPdf(exportBytes, exportPlan, 'back', activeSpineGap, exportOptions);
+        download(back, `${base}-booklet-${activeBookletFormat}-back.pdf`);
       }
       setExportDone(exportMode);
     } catch (err) {
@@ -156,7 +171,7 @@ export default function App() {
     const nextPositions = plan.blankPositions.map((position, positionIndex) => (
       positionIndex === index ? parsedPosition : position
     ));
-    const nextPlan = buildBookletPlan(plan.originalPageCount, nextPositions);
+    const nextPlan = buildBookletPlan(plan.originalPageCount, nextPositions, activeBookletFormat);
     setPlan(nextPlan);
     setBlankInputs((current) => current.map((item, itemIndex) => (
       itemIndex === index ? String(parsedPosition) : item
@@ -178,6 +193,24 @@ export default function App() {
   function handlePaperSizeChange(value) {
     if (value === activePaperSize) return;
     setPaperSize(value);
+    const nextBookletFormat = value === 'long' ? 'a5' : normalizeBookletFormat(bookletFormat);
+    setBookletFormat(nextBookletFormat);
+    if (plan && plan.format !== nextBookletFormat) {
+      const nextPlan = buildBookletPlan(plan.originalPageCount, undefined, nextBookletFormat);
+      setPlan(nextPlan);
+      setBlankInputs(nextPlan.blankPositions.map(String));
+      setSpineGap(0);
+    }
+    setExportDone(null);
+  }
+
+  function handleBookletFormatChange(value) {
+    if (value === activeBookletFormat || !plan) return;
+    setBookletFormat(value);
+    const nextPlan = buildBookletPlan(plan.originalPageCount, undefined, value);
+    setPlan(nextPlan);
+    setBlankInputs(nextPlan.blankPositions.map(String));
+    setSpineGap(0);
     setExportDone(null);
   }
 
@@ -258,6 +291,25 @@ export default function App() {
                   ))}
                 </div>
               </div>
+              {activePaperSize === 'a4' && (
+                <div className="stat stat-wide paper-size-stat">
+                  <span className="stat-label">小册子格式</span>
+                  <div className="paper-size-switch" role="radiogroup" aria-label="小册子格式">
+                    {Object.values(BOOKLET_FORMATS).map((format) => (
+                      <button
+                        key={format.id}
+                        type="button"
+                        role="radio"
+                        aria-checked={activeBookletFormat === format.id}
+                        className={activeBookletFormat === format.id ? 'active' : ''}
+                        onClick={() => handleBookletFormatChange(format.id)}
+                      >
+                        <span>{format.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
               <div className="stat-grid">
                 <div className="stat">
                   <span className="stat-label">原始页数</span>
@@ -341,6 +393,7 @@ export default function App() {
             <ExportPanel
               plan={plan}
               paperSize={activePaperSize}
+              bookletFormat={activeBookletFormat}
               exportMode={exportMode}
               onModeChange={setExportMode}
               onExport={handleExport}
@@ -373,9 +426,21 @@ export default function App() {
               </button>
             </div>
             {view === 'sheet' ? (
-              <SheetView pdfDoc={pdfDoc} plan={plan} spineGap={activeSpineGap} paperSize={activePaperSize} />
+              <SheetView
+                pdfDoc={pdfDoc}
+                plan={plan}
+                spineGap={activeSpineGap}
+                paperSize={activePaperSize}
+                bookletFormat={activeBookletFormat}
+              />
             ) : (
-              <FlipView pdfDoc={pdfDoc} plan={plan} spineGap={activeSpineGap} paperSize={activePaperSize} />
+              <FlipView
+                pdfDoc={pdfDoc}
+                plan={plan}
+                spineGap={activeSpineGap}
+                paperSize={activePaperSize}
+                bookletFormat={activeBookletFormat}
+              />
             )}
           </section>
         </main>

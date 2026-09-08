@@ -24,8 +24,42 @@ export const PAPER_SIZES = {
 
 export const DEFAULT_PAPER_SIZE = 'a4';
 
+export const BOOKLET_FORMATS = {
+  a5: {
+    id: 'a5',
+    label: 'A5 小册子',
+    pagesPerSheet: 4,
+  },
+  a6: {
+    id: 'a6',
+    label: 'A6 小册子',
+    pagesPerSheet: 8,
+  },
+};
+
+export const DEFAULT_BOOKLET_FORMAT = 'a5';
+
 export function normalizePaperSize(value) {
   return PAPER_SIZES[value] ? value : DEFAULT_PAPER_SIZE;
+}
+
+export function normalizeBookletFormat(value) {
+  return BOOKLET_FORMATS[value] ? value : DEFAULT_BOOKLET_FORMAT;
+}
+
+// A6 模式下，A4 纸张保持横向使用：297 × 210 mm，每面排 2×2。
+export function getSheetLayout(paperSize, bookletFormat = DEFAULT_BOOKLET_FORMAT) {
+  const paper = PAPER_SIZES[paperSize] || PAPER_SIZES.a4;
+  const isA6 = normalizeBookletFormat(bookletFormat) === 'a6';
+  const sheetWidthMm = paper.sheetWidthMm;
+  const sheetHeightMm = paper.sheetHeightMm;
+  return {
+    paper,
+    sheetWidthMm,
+    sheetHeightMm,
+    pageWidthMm: sheetWidthMm / 2,
+    pageHeightMm: isA6 ? sheetHeightMm / 2 : sheetHeightMm,
+  };
 }
 
 export function normalizeSpineGap(value) {
@@ -34,10 +68,16 @@ export function normalizeSpineGap(value) {
   return Math.min(MAX_SPINE_GAP_MM, Math.max(MIN_SPINE_GAP_MM, parsed));
 }
 
-export function buildBookletPlan(originalPageCount, blankPositionsOverride) {
-  const blankCount = (4 - (originalPageCount % 4)) % 4;
+export function buildBookletPlan(
+  originalPageCount,
+  blankPositionsOverride,
+  bookletFormat = DEFAULT_BOOKLET_FORMAT,
+) {
+  const format = normalizeBookletFormat(bookletFormat);
+  const pagesPerSheet = BOOKLET_FORMATS[format].pagesPerSheet;
+  const blankCount = (pagesPerSheet - (originalPageCount % pagesPerSheet)) % pagesPerSheet;
   const total = originalPageCount + blankCount;
-  const sheets = total / 4;
+  const sheets = total / pagesPerSheet;
   const blankPositions = normalizeBlankPositions(originalPageCount, blankCount, blankPositionsOverride);
   const blankPages = new Set(blankPositions);
   const pageSlots = [];
@@ -54,21 +94,51 @@ export function buildBookletPlan(originalPageCount, blankPositionsOverride) {
 
   const plan = [];
 
-  for (let i = 1; i <= sheets; i += 1) {
-    plan.push({
-      index: i,
-      front: {
-        left: pageSlots[total - 2 * i + 2 - 1],
-        right: pageSlots[2 * i - 1 - 1],
-      },
-      back: {
-        left: pageSlots[2 * i - 1],
-        right: pageSlots[total - 2 * i + 1 - 1],
-      },
-    });
+  if (format === 'a6') {
+    for (let i = 1; i <= sheets; i += 1) {
+      plan.push({
+        index: i,
+        front: {
+          topLeft: pageSlots[total - 4 * i + 2 - 1],
+          topRight: pageSlots[4 * i - 1 - 1],
+          bottomLeft: pageSlots[total - 4 * i + 4 - 1],
+          bottomRight: pageSlots[4 * i - 3 - 1],
+        },
+        back: {
+          topLeft: pageSlots[4 * i - 1],
+          topRight: pageSlots[total - 4 * i + 1 - 1],
+          bottomLeft: pageSlots[4 * i - 3],
+          bottomRight: pageSlots[total - 4 * i + 3 - 1],
+        },
+      });
+    }
+  } else {
+    for (let i = 1; i <= sheets; i += 1) {
+      plan.push({
+        index: i,
+        front: {
+          left: pageSlots[total - 2 * i + 2 - 1],
+          right: pageSlots[2 * i - 1 - 1],
+        },
+        back: {
+          left: pageSlots[2 * i - 1],
+          right: pageSlots[total - 2 * i + 1 - 1],
+        },
+      });
+    }
   }
 
-  return { originalPageCount, blankCount, blankPositions, total, sheets, plan, pageSlots };
+  return {
+    originalPageCount,
+    blankCount,
+    blankPositions,
+    total,
+    sheets,
+    format,
+    pagesPerSheet,
+    plan,
+    pageSlots,
+  };
 }
 
 export function normalizeBlankPositions(originalPageCount, blankCount, blankPositionsOverride) {

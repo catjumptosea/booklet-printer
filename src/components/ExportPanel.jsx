@@ -4,6 +4,7 @@ import { PAPER_SIZES } from '../lib/booklet';
 export default function ExportPanel({
   plan,
   paperSize = 'a4',
+  bookletFormat = 'a5',
   exportMode,
   onModeChange,
   onExport,
@@ -11,6 +12,7 @@ export default function ExportPanel({
   exportDone,
 }) {
   const paper = PAPER_SIZES[paperSize] || PAPER_SIZES.a4;
+  const isA6 = bookletFormat === 'a6';
 
   return (
     <section className="card export-card">
@@ -40,14 +42,21 @@ export default function ExportPanel({
 
       {exportMode === 'duplex' ? (
         <p className="mode-tip">
-          页序：纸1正、纸1反、纸2正、纸2反……打印时选择「双面打印 + <strong>短边翻转</strong>」，缩放 100%。
+          页序：纸1正、纸1反、纸2正、纸2反……打印时选择「双面打印 +
+          <strong>{isA6 ? '短边翻转' : '短边翻转'}</strong>」，缩放 100%。
         </p>
       ) : (
         <ol className="guide-list">
           <li>先打印「正面文件」：实际大小（100%）、单面打印；</li>
           <li>取出纸张，像翻书一样<strong>左右翻面</strong>（上下方向不变），放回进纸器；</li>
           <li>再打印「反面文件」，设置相同；</li>
-          <li>按纸张顺序叠放，沿中线对折，装订。</li>
+          {isA6 ? (
+            <li>
+              每张 A4 纸<strong>先沿水平中线裁成上下两半</strong>，再沿<strong>短边中线对折</strong>；把上半裁片放进下半裁片，按纸张顺序叠放，从折缝处骑马订。
+            </li>
+          ) : (
+            <li>按纸张顺序叠放，沿中线对折，装订。</li>
+          )}
         </ol>
       )}
 

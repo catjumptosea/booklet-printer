@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { PageFlip } from 'page-flip';
 import { ChevronLeft, ChevronRight, CornerDownLeft, Maximize, Minimize } from 'lucide-react';
-import { PAPER_SIZES } from '../lib/booklet';
+import { getSheetLayout, PAPER_SIZES } from '../lib/booklet';
 
 const MAX_HIGH_RES_PAGE_WIDTH = 1800;
 const HIGH_RES_JPEG_QUALITY = 0.92;
@@ -11,16 +11,16 @@ const HIGH_RES_SOURCE_RELEASE_DELAY_MS = 1500;
 const MAX_SPINE_GAP_MM = 280;
 const PX_PER_MM = 840 / PAPER_SIZES.a4.sheetWidthMm;
 
-function getPaperGeometry(paperSize) {
-  const paper = PAPER_SIZES[paperSize] || PAPER_SIZES.a4;
-  const sheetWidth = paper.sheetWidthMm * PX_PER_MM;
-  const sheetHeight = paper.sheetHeightMm * PX_PER_MM;
+function getPaperGeometry(paperSize, bookletFormat = 'a5') {
+  const layout = getSheetLayout(paperSize, bookletFormat);
+  const sheetWidth = layout.sheetWidthMm * PX_PER_MM;
+  const sheetHeight = layout.sheetHeightMm * PX_PER_MM;
   return {
-    paper,
+    paper: layout.paper,
     sheetWidth,
     sheetHeight,
-    pageWidth: sheetWidth / 2,
-    pageHeight: sheetHeight,
+    pageWidth: layout.pageWidthMm * PX_PER_MM,
+    pageHeight: layout.pageHeightMm * PX_PER_MM,
   };
 }
 
@@ -85,6 +85,7 @@ function renderPageImage(
   quality = 0.86,
   contentInsetPx = 0,
   contentAnchor = 'center',
+  forceLandscape = false,
 ) {
   return new Promise((resolve, reject) => {
     (async () => {
@@ -92,11 +93,16 @@ function renderPageImage(
       const baseViewport = page.getViewport({ scale: 1 });
       const inset = Math.max(0, Math.min(boxWidth / 2, contentInsetPx)) * renderScale;
       const contentWidth = Math.max(1, boxWidth * renderScale - inset * 2);
+      const shouldRotate = forceLandscape && baseViewport.width < baseViewport.height;
+      const naturalWidth = shouldRotate ? baseViewport.height : baseViewport.width;
+      const naturalHeight = shouldRotate ? baseViewport.width : baseViewport.height;
       const scale = Math.min(
-        contentWidth / baseViewport.width,
-        (boxHeight * renderScale) / baseViewport.height,
+        contentWidth / naturalWidth,
+        (boxHeight * renderScale) / naturalHeight,
       );
-      const viewport = page.getViewport({ scale });
+      const drawWidth = baseViewport.width * scale;
+      const drawHeight = baseViewport.height * scale;
+      const visibleWidth = shouldRotate ? drawHeight : drawWidth;
       const canvas = document.createElement('canvas');
       canvas.width = Math.max(1, Math.floor(boxWidth * renderScale));
       canvas.height = Math.max(1, Math.floor(boxHeight * renderScale));
@@ -105,16 +111,27 @@ function renderPageImage(
       context.fillStyle = '#ffffff';
       context.fillRect(0, 0, canvas.width, canvas.height);
       const availableWidth = canvas.width - inset * 2;
-      const contentX = contentAnchor === 'left'
-        ? inset
+      const contentCenterX = contentAnchor === 'left'
+        ? inset + visibleWidth / 2
         : contentAnchor === 'right'
-          ? Math.max(inset, canvas.width - inset - viewport.width)
-          : inset + Math.max(0, (availableWidth - viewport.width) / 2);
+          ? Math.max(
+            inset + visibleWidth / 2,
+            canvas.width - inset - visibleWidth / 2,
+          )
+          : inset + availableWidth / 2;
       context.translate(
-        contentX,
-        (canvas.height - viewport.height) / 2,
+        contentCenterX,
+        canvas.height / 2,
       );
-      await page.render({ canvasContext: context, viewport }).promise;
+      if (shouldRotate) {
+        context.rotate(Math.PI / 2);
+      }
+      const centeredViewport = page.getViewport({
+        scale,
+        offsetX: -(drawWidth / 2),
+        offsetY: -(drawHeight / 2),
+      });
+      await page.render({ canvasContext: context, viewport: centeredViewport }).promise;
       resolve(await canvasToObjectUrl(canvas, 'image/jpeg', quality));
     })().catch(reject);
   });
@@ -310,7 +327,13 @@ function applyIntegerPageGeometry(pageFlip, spineGap, geometry) {
   pageFlip.updateOrientation(pageFlip.getOrientation());
 }
 
-export default function FlipView({ pdfDoc, plan, spineGap = 0, paperSize = 'a4' }) {
+export default function FlipView({
+  pdfDoc,
+  plan,
+  spineGap = 0,
+  paperSize = 'a4',
+  bookletFormat = 'a5',
+}) {
   const shellRef = useRef(null);
   const stageRef = useRef(null);
   const viewBlockRef = useRef(null);
@@ -325,7 +348,10 @@ export default function FlipView({ pdfDoc, plan, spineGap = 0, paperSize = 'a4' 
   const downgradeTimerRef = useRef(null);
   const highResReleaseTimerRef = useRef(null);
   const previewSwitchTokenRef = useRef(0);
-  const geometry = useMemo(() => getPaperGeometry(paperSize), [paperSize]);
+  const geometry = useMemo(
+    () => getPaperGeometry(paperSize, bookletFormat),
+    [paperSize, bookletFormat],
+  );
   const [index, setIndex] = useState(0);
   const [ready, setReady] = useState(false);
   const [flipping, setFlipping] = useState(false);
@@ -336,6 +362,7 @@ export default function FlipView({ pdfDoc, plan, spineGap = 0, paperSize = 'a4' 
     progress: 0,
     visible: false,
   });
+  const [initialLoad, setInitialLoad] = useState({ active: false, progress: 0 });
 
   const cancelPendingDowngrade = useCallback(() => {
     if (downgradeTimerRef.current) {
@@ -492,6 +519,7 @@ export default function FlipView({ pdfDoc, plan, spineGap = 0, paperSize = 'a4' 
     highResStateRef.current = 'idle';
     activeQualityRef.current = 'low';
     setHighResRender({ active: false, progress: 0, visible: false });
+    setInitialLoad({ active: true, progress: 0 });
     fitStage();
 
     resizeObserver = new ResizeObserver(() => {
@@ -511,6 +539,15 @@ export default function FlipView({ pdfDoc, plan, spineGap = 0, paperSize = 'a4' 
     async function setup() {
       const spineGapPx = getSpineGapPx(spineGap);
       const pageBoxWidth = getPageBoxWidth(spineGap, geometry);
+      const totalImages = plan.total + 2;
+      let completedImages = 0;
+      const markInitialProgress = () => {
+        completedImages += 1;
+        setInitialLoad({
+          active: true,
+          progress: Math.round((completedImages / totalImages) * 100),
+        });
+      };
       // These two preview-only pages turn cover/back-cover boundaries into
       // ordinary spreads so StPageFlip can handle every flip state natively.
       lowResUrls = [];
@@ -521,6 +558,7 @@ export default function FlipView({ pdfDoc, plan, spineGap = 0, paperSize = 'a4' 
         return;
       }
       lowResUrls.push(firstUrl);
+      markInitialProgress();
 
       for (let pageNumber = 1; pageNumber <= plan.total; pageNumber += 1) {
         const slot = plan.pageSlots[pageNumber - 1];
@@ -535,6 +573,7 @@ export default function FlipView({ pdfDoc, plan, spineGap = 0, paperSize = 'a4' 
             undefined,
             spineGapPx / 2,
             getPageContentAnchor(pageNumber),
+            plan.format === 'a6',
           );
         if (cancelled) {
           revokeImageUrls([src]);
@@ -544,6 +583,7 @@ export default function FlipView({ pdfDoc, plan, spineGap = 0, paperSize = 'a4' 
         }
         lowResUrls.push(src);
         await preloadImage(src);
+        markInitialProgress();
         if (cancelled) {
           revokeImageUrls(lowResUrls);
           return;
@@ -558,6 +598,7 @@ export default function FlipView({ pdfDoc, plan, spineGap = 0, paperSize = 'a4' 
       }
       lowResUrls.push(lastUrl);
       await preloadImage(lastUrl);
+      markInitialProgress();
 
       if (cancelled) {
         revokeImageUrls(lowResUrls);
@@ -600,6 +641,7 @@ export default function FlipView({ pdfDoc, plan, spineGap = 0, paperSize = 'a4' 
 
       pageFlip.on('init', ({ data }) => {
         if (!cancelled) {
+          setInitialLoad({ active: false, progress: 100 });
           setIndex(getSpreadIndex(data.page));
           setReady(true);
         }
@@ -616,6 +658,7 @@ export default function FlipView({ pdfDoc, plan, spineGap = 0, paperSize = 'a4' 
 
     setup().catch((error) => {
       console.error('Failed to initialize flipbook:', error);
+      setInitialLoad({ active: false, progress: 0 });
       revokeImageUrls(lowResUrls);
       if (lowResImagesRef.current === lowResUrls) {
         lowResImagesRef.current = null;
@@ -624,6 +667,7 @@ export default function FlipView({ pdfDoc, plan, spineGap = 0, paperSize = 'a4' 
 
     return () => {
       cancelled = true;
+      setInitialLoad({ active: false, progress: 0 });
       highResRenderTokenRef.current += 1;
       releaseAllPreviewSources();
       if (resizeObserver) resizeObserver.disconnect();
@@ -723,7 +767,8 @@ export default function FlipView({ pdfDoc, plan, spineGap = 0, paperSize = 'a4' 
   const startHighResRender = useCallback(async () => {
     const shell = shellRef.current;
     const pageFlip = pageFlipRef.current;
-    if (!shell || !pageFlip || !pdfDoc || !plan) return;
+    const fullscreenActive = document.fullscreenElement === viewBlockRef.current;
+    if (!fullscreenActive || !shell || !pageFlip || !pdfDoc || !plan) return;
 
     const target = getHighResRenderTarget(shell, spineGap, geometry);
     if (!target) return;
@@ -733,6 +778,7 @@ export default function FlipView({ pdfDoc, plan, spineGap = 0, paperSize = 'a4' 
       plan.total,
       plan.blankPositions.join('-'),
       geometry.paper.id,
+      plan.format,
       target.width,
       target.height,
     ].join(':');
@@ -794,6 +840,7 @@ export default function FlipView({ pdfDoc, plan, spineGap = 0, paperSize = 'a4' 
             HIGH_RES_JPEG_QUALITY,
             target.gap / 2,
             getPageContentAnchor(pageNumber),
+            plan.format === 'a6',
           );
         highResUrls.push(src);
         await preloadImage(src);
@@ -858,7 +905,7 @@ export default function FlipView({ pdfDoc, plan, spineGap = 0, paperSize = 'a4' 
     } finally {
       window.clearTimeout(showProgressTimer);
     }
-  }, [applyRetainedHighRes, geometry, pdfDoc, plan, spineGap]);
+  }, [applyRetainedHighRes, geometry, isFullscreen, pdfDoc, plan, spineGap]);
 
   useEffect(() => {
     if (!isFullscreen || !ready || flipping) return undefined;
@@ -870,23 +917,25 @@ export default function FlipView({ pdfDoc, plan, spineGap = 0, paperSize = 'a4' 
     return () => window.clearTimeout(timer);
   }, [flipping, isFullscreen, ready, startHighResRender]);
 
+  const activeProgress = initialLoad.active ? initialLoad : highResRender;
+
   return (
     <div className="view-block" ref={viewBlockRef}>
       <div className="view-canvas">
         <div className="flipbook-shell" ref={shellRef}>
           <div className="flipbook-stage" ref={stageRef} />
         </div>
-        {highResRender.active && (
+        {(initialLoad.active || (isFullscreen && highResRender.active)) && (
           <div
-            className={`render-progress-overlay${highResRender.visible ? ' visible' : ''}`}
+            className={`render-progress-overlay${initialLoad.active || (isFullscreen && highResRender.visible) ? ' visible' : ''}`}
             role="status"
             aria-live="polite"
           >
-            <p>正在渲染高清预览</p>
+            <p>{initialLoad.active ? '正在加载册子预览' : '正在渲染高清预览'}</p>
             <div className="render-progress-track">
-              <span style={{ width: `${highResRender.progress}%` }} />
+              <span style={{ width: `${activeProgress.progress}%` }} />
             </div>
-            <span className="render-progress-count">{highResRender.progress}%</span>
+            <span className="render-progress-count">{activeProgress.progress}%</span>
           </div>
         )}
       </div>

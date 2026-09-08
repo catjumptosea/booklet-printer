@@ -859,6 +859,31 @@ button:disabled {
   justify-content: flex-end;
 }
 
+.sheet-a6 {
+  position: relative;
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.sheet-row {
+  flex: 1 1 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 0;
+}
+
+.cut-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  border-top: 1.5px dashed #c9a97c;
+  opacity: 0.9;
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+
 .fold-line {
   position: relative;
   width: 0;

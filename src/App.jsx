@@ -392,8 +392,8 @@ export default function App() {
                   <span className="stat-label-with-help">
                   <span className="stat-label">双页内容</span>
                   <Tooltip title="当一页 PDF 是完整的左右双页扫描图时，请开启此开关。仅支持封底+封面、左页+右页的扫描逻辑；由多个独立图片拼成或只有单侧内容的 PDF，请先预处理">
-                    <span className="field-help" role="img" aria-label="当一页 PDF 是完整的左右双页扫描图时，请开启此开关。仅支持封底+封面、左页+右页的扫描逻辑；由多个独立图片拼成或只有单侧内容的 PDF，请先预处理">
-                      <Info size={13} />
+                    <span className="beta-badge" role="img" aria-label="当一页 PDF 是完整的左右双页扫描图时，请开启此开关。仅支持封底+封面、左页+右页的扫描逻辑；由多个独立图片拼成或只有单侧内容的 PDF，请先预处理">
+                      BETA
                     </span>
                   </Tooltip>
                 </span>

@@ -1,11 +1,11 @@
 {
   "name": "booklet-printer",
   "private": true,
-  "version": "1.5.2",
+  "version": "1.5.3",
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "vite build && node scripts/inline-dist.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

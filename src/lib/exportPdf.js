@@ -1,4 +1,13 @@
-import { PDFDocument, degrees, rgb } from 'pdf-lib';
+import {
+  PDFDocument,
+  clip,
+  degrees,
+  endPath,
+  pushGraphicsState,
+  popGraphicsState,
+  rectangle,
+  rgb,
+} from 'pdf-lib';
 import { MAX_SPINE_GAP_MM, PAPER_SIZES } from './booklet';
 
 const MM = 2.834645; // 1 mm = 2.8346 pt
@@ -84,8 +93,20 @@ function getCreepShiftPt(sheetIndex, totalSheets, creepMm) {
 async function placeSlot(page, outDoc, srcDoc, slot, position, spineGap, sheet, creepShiftPt = 0, bookletFormat = 'a5') {
   if (slot.kind !== 'page') return;
   const srcPage = srcDoc.getPage(slot.sourcePage - 1);
-  const embedded = await outDoc.embedPage(srcPage);
   const { width: rawW, height: rawH } = srcPage.getSize();
+  const crop = slot.crop;
+  const cropLeft = Math.max(0, Math.min(1, crop?.left ?? 0));
+  const cropTop = Math.max(0, Math.min(1, crop?.top ?? 0));
+  const cropWidth = Math.max(0.001, Math.min(1 - cropLeft, crop?.width ?? 1));
+  const cropHeight = Math.max(0.001, Math.min(1 - cropTop, crop?.height ?? 1));
+  const sourceW = rawW * cropWidth;
+  const sourceH = rawH * cropHeight;
+  const embedded = await outDoc.embedPage(srcPage, crop ? {
+    left: rawW * cropLeft,
+    bottom: rawH * (1 - cropTop - cropHeight),
+    right: rawW * (cropLeft + cropWidth),
+    top: rawH * (1 - cropTop),
+  } : undefined);
   const metaAngle = ((srcPage.getRotation().angle % 360) + 360) % 360;
   // 元数据旋转的页面绘制时补偿回正；A6 竖版源页顺时针旋转到横版槽位。
   const angle = metaAngle !== 0
@@ -94,29 +115,29 @@ async function placeSlot(page, outDoc, srcDoc, slot, position, spineGap, sheet, 
       ? (rawW > rawH ? 0 : 90)
       : (rawW > rawH ? 90 : 0);
   const metadataSwapped = metaAngle === 90 || metaAngle === 270;
-  const metadataWidth = metadataSwapped ? rawH : rawW;
-  const metadataHeight = metadataSwapped ? rawW : rawH;
+  const metadataWidth = metadataSwapped ? sourceH : sourceW;
+  const metadataHeight = metadataSwapped ? sourceW : sourceH;
   const needsQuarterTurn = bookletFormat === 'a6'
     ? metadataWidth < metadataHeight
     : metadataWidth > metadataHeight;
   const targetAngle = (
     metaAngle
     + (needsQuarterTurn ? 90 : 0)
-    + (bookletFormat === 'a6' ? 180 : 0)
+    + (bookletFormat === 'a6' && !crop ? 180 : 0)
   ) % 360;
   const swapped = targetAngle === 90 || targetAngle === 270;
-  const vw = swapped ? rawH : rawW;
-  const vh = swapped ? rawW : rawH;
+  const vw = swapped ? sourceH : sourceW;
+  const vh = swapped ? sourceW : sourceH;
 
   const box = slotBox(position, spineGap, sheet, bookletFormat);
   const scale = Math.min(box.w / vw, box.h / vh);
   const normalizedSpineGap = Math.min(MAX_SPINE_GAP_MM, Math.max(0, Number(spineGap) || 0));
-  const fitToBox = sheet.id === 'long' || normalizedSpineGap > 0;
+  const fitToBox = sheet.id === 'long' || normalizedSpineGap > 0 || Boolean(crop);
   const drawW = fitToBox
-    ? rawW * scale
+    ? sourceW * scale
     : swapped ? box.h : box.w;
   const drawH = fitToBox
-    ? rawH * scale
+    ? sourceH * scale
     : swapped ? box.w : box.h;
   // Equal-aspect fitting can leave a narrow side band. Anchor it to the fold
   // so spineGap=0 produces two touching page areas without a center gap.
@@ -147,7 +168,18 @@ async function placeSlot(page, outDoc, srcDoc, slot, position, spineGap, sheet, 
     y = cy + drawW / 2;
   }
 
+  if (crop) {
+    page.pushOperators(
+      pushGraphicsState(),
+      rectangle(box.x, box.y, box.w, box.h),
+      clip(),
+      endPath(),
+    );
+  }
   page.drawPage(embedded, { x, y, width: drawW, height: drawH, rotate: degrees(targetAngle) });
+  if (crop) {
+    page.pushOperators(popGraphicsState());
+  }
 }
 
 async function buildFacesPdf(

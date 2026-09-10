@@ -4,6 +4,7 @@ diag/
 
 *.log
 .vite/
+release/
 
 .env
 .env.*

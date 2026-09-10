@@ -39,6 +39,19 @@ export const BOOKLET_FORMATS = {
 
 export const DEFAULT_BOOKLET_FORMAT = 'a5';
 
+export const PAGE_CONTENT_MODES = {
+  single: 'single',
+  horizontal: 'horizontal',
+};
+
+export const DEFAULT_PAGE_CONTENT_MODE = PAGE_CONTENT_MODES.single;
+
+export function normalizePageContentMode(value) {
+  return Object.values(PAGE_CONTENT_MODES).includes(value)
+    ? value
+    : DEFAULT_PAGE_CONTENT_MODE;
+}
+
 export function normalizePaperSize(value) {
   return PAPER_SIZES[value] ? value : DEFAULT_PAPER_SIZE;
 }
@@ -69,26 +82,30 @@ export function normalizeSpineGap(value) {
 }
 
 export function buildBookletPlan(
-  originalPageCount,
+  sourcePageCount,
   blankPositionsOverride,
   bookletFormat = DEFAULT_BOOKLET_FORMAT,
+  pageContentMode = DEFAULT_PAGE_CONTENT_MODE,
 ) {
   const format = normalizeBookletFormat(bookletFormat);
+  const contentMode = normalizePageContentMode(pageContentMode);
   const pagesPerSheet = BOOKLET_FORMATS[format].pagesPerSheet;
-  const blankCount = (pagesPerSheet - (originalPageCount % pagesPerSheet)) % pagesPerSheet;
-  const total = originalPageCount + blankCount;
+  const contentPages = buildContentPages(sourcePageCount, contentMode);
+  const contentPageCount = contentPages.length;
+  const blankCount = (pagesPerSheet - (contentPageCount % pagesPerSheet)) % pagesPerSheet;
+  const total = contentPageCount + blankCount;
   const sheets = total / pagesPerSheet;
-  const blankPositions = normalizeBlankPositions(originalPageCount, blankCount, blankPositionsOverride);
+  const blankPositions = normalizeBlankPositions(contentPageCount, blankCount, blankPositionsOverride);
   const blankPages = new Set(blankPositions);
   const pageSlots = [];
-  let sourcePage = 1;
+  let contentPageIndex = 0;
 
   for (let bookletPage = 1; bookletPage <= total; bookletPage += 1) {
     if (blankPages.has(bookletPage)) {
-      pageSlots.push({ kind: 'blank', sourcePage: null });
+      pageSlots.push({ kind: 'blank', sourcePage: null, bookletPage });
     } else {
-      pageSlots.push({ kind: 'page', sourcePage });
-      sourcePage += 1;
+      pageSlots.push({ kind: 'page', bookletPage, ...contentPages[contentPageIndex] });
+      contentPageIndex += 1;
     }
   }
 
@@ -129,16 +146,45 @@ export function buildBookletPlan(
   }
 
   return {
-    originalPageCount,
+    originalPageCount: sourcePageCount,
+    sourcePageCount,
+    contentPageCount,
     blankCount,
     blankPositions,
     total,
     sheets,
     format,
     pagesPerSheet,
+    pageContentMode: contentMode,
     plan,
     pageSlots,
   };
+}
+
+function buildContentPages(sourcePageCount, pageContentMode) {
+  const contentMode = normalizePageContentMode(pageContentMode);
+  const pages = [];
+
+  if (contentMode === PAGE_CONTENT_MODES.horizontal && sourcePageCount > 0) {
+    const leftCrop = { left: 0, top: 0, width: 0.5, height: 1 };
+    const rightCrop = { left: 0.5, top: 0, width: 0.5, height: 1 };
+
+    pages.push({ sourcePage: 1, crop: rightCrop });
+    for (let sourcePage = 2; sourcePage <= sourcePageCount; sourcePage += 1) {
+      pages.push(
+        { sourcePage, crop: leftCrop },
+        { sourcePage, crop: rightCrop },
+      );
+    }
+    pages.push({ sourcePage: 1, crop: leftCrop });
+    return pages;
+  }
+
+  for (let sourcePage = 1; sourcePage <= sourcePageCount; sourcePage += 1) {
+    pages.push({ sourcePage, crop: null });
+  }
+
+  return pages;
 }
 
 export function normalizeBlankPositions(originalPageCount, blankCount, blankPositionsOverride) {

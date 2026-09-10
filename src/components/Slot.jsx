@@ -28,12 +28,13 @@ export default function Slot({
       <PageCanvas
         pdfDoc={pdfDoc}
         pageNumber={slot.sourcePage}
+        crop={slot.crop}
         boxWidth={boxWidth}
         boxHeight={boxHeight}
         forceLandscape={forceLandscape}
         contentAnchor={anchor}
       />
-      <span className={`slot-badge badge-${badgeSide}`}>P{slot.sourcePage}</span>
+      <span className={`slot-badge badge-${badgeSide}`}>P{slot.bookletPage ?? slot.sourcePage}</span>
     </div>
   );
 }

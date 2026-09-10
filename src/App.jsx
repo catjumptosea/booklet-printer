@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { Alert, Divider, InputNumber, Segmented, Tooltip } from 'antd';
+import { Alert, Divider, InputNumber, Segmented, Switch, Tooltip } from 'antd';
 import { AlertTriangle, BookOpenCheck, Info, Layers, Loader2, RotateCcw, ShieldCheck, X } from 'lucide-react';
 import 'antd/dist/reset.css';
 import packageJson from '../package.json';
@@ -11,10 +11,12 @@ import {
   BOOKLET_FORMATS,
   buildBookletPlan,
   DEFAULT_BOOKLET_FORMAT,
+  DEFAULT_PAPER_SIZE,
   MAX_SPINE_GAP_MM,
   normalizeBookletFormat,
   normalizePaperSize,
   normalizeSpineGap,
+  DEFAULT_PAGE_CONTENT_MODE,
   PAPER_SIZES,
 } from './lib/booklet';
 import { loadPdfDoc } from './lib/pdfjs';
@@ -37,6 +39,7 @@ export default function App() {
   const [plan, setPlan] = useState(null);
   const [paperSize, setPaperSize] = useState('a4');
   const [bookletFormat, setBookletFormat] = useState(DEFAULT_BOOKLET_FORMAT);
+  const [pageContentMode, setPageContentMode] = useState(DEFAULT_PAGE_CONTENT_MODE);
   const [spineGap, setSpineGap] = useState(0);
   const [spineGapDraft, setSpineGapDraft] = useState(0);
   const [blankInputs, setBlankInputs] = useState([]);
@@ -65,6 +68,13 @@ export default function App() {
       return;
     }
 
+    setPaperSize(DEFAULT_PAPER_SIZE);
+    setBookletFormat(DEFAULT_BOOKLET_FORMAT);
+    setPageContentMode(DEFAULT_PAGE_CONTENT_MODE);
+    setSpineGap(0);
+    setSpineGapDraft(0);
+    setView('flip');
+    setExportMode('duplex');
     setError(null);
     setExportDone(null);
     if (isReplacement) {
@@ -84,10 +94,13 @@ export default function App() {
       setBytes(exportBytes);
       setPdfDoc(doc);
       setFileMeta({ name: file.name, size: file.size });
-      const nextPlan = buildBookletPlan(doc.numPages, undefined, activeBookletFormat);
+      const nextPlan = buildBookletPlan(
+        doc.numPages,
+        undefined,
+        DEFAULT_BOOKLET_FORMAT,
+        DEFAULT_PAGE_CONTENT_MODE,
+      );
       setPlan(nextPlan);
-      setSpineGap(0);
-      setSpineGapDraft(0);
       setBlankInputs(nextPlan.blankPositions.map(String));
       setBookletFormat(nextPlan.format);
       setStatus('ready');
@@ -181,7 +194,7 @@ export default function App() {
     const nextPositions = plan.blankPositions.map((position, positionIndex) => (
       positionIndex === index ? parsedPosition : position
     ));
-    const nextPlan = buildBookletPlan(plan.originalPageCount, nextPositions, activeBookletFormat);
+    const nextPlan = buildBookletPlan(plan.sourcePageCount, nextPositions, activeBookletFormat, pageContentMode);
     setPlan(nextPlan);
     setBlankInputs((current) => current.map((item, itemIndex) => (
       itemIndex === index ? String(parsedPosition) : item
@@ -211,7 +224,7 @@ export default function App() {
     const nextBookletFormat = value === 'long' ? 'a5' : normalizeBookletFormat(bookletFormat);
     setBookletFormat(nextBookletFormat);
     if (plan && plan.format !== nextBookletFormat) {
-      const nextPlan = buildBookletPlan(plan.originalPageCount, undefined, nextBookletFormat);
+      const nextPlan = buildBookletPlan(plan.sourcePageCount, undefined, nextBookletFormat, pageContentMode);
       setPlan(nextPlan);
       setBlankInputs(nextPlan.blankPositions.map(String));
       setSpineGap(0);
@@ -223,11 +236,19 @@ export default function App() {
   function handleBookletFormatChange(value) {
     if (value === activeBookletFormat || !plan) return;
     setBookletFormat(value);
-    const nextPlan = buildBookletPlan(plan.originalPageCount, undefined, value);
+    const nextPlan = buildBookletPlan(plan.sourcePageCount, undefined, value, pageContentMode);
     setPlan(nextPlan);
     setBlankInputs(nextPlan.blankPositions.map(String));
-    setSpineGap(0);
-    setSpineGapDraft(0);
+    setExportDone(null);
+  }
+
+  function handlePageContentModeChange(enabled) {
+    const nextMode = enabled ? 'horizontal' : DEFAULT_PAGE_CONTENT_MODE;
+    if (!plan || nextMode === pageContentMode) return;
+    setPageContentMode(nextMode);
+    const nextPlan = buildBookletPlan(plan.sourcePageCount, undefined, activeBookletFormat, nextMode);
+    setPlan(nextPlan);
+    setBlankInputs(nextPlan.blankPositions.map(String));
     setExportDone(null);
   }
 
@@ -340,12 +361,14 @@ export default function App() {
                 </div>
               )}
               <div className="setting-row spine-row">
-                <label className="stat-label" htmlFor="spine-gap">书脊间距</label>
-                <Tooltip title="折页处两页内容之间预留的折叠区域宽度">
-                  <span className="field-help" role="img" aria-label="书脊间距说明">
-                    <Info size={13} />
-                  </span>
-                </Tooltip>
+                <label className="stat-label-with-help" htmlFor="spine-gap">
+                  <span className="stat-label">书脊间距</span>
+                  <Tooltip title="折页处两页内容之间预留的折叠区域宽度">
+                    <span className="field-help" role="img" aria-label="书脊间距说明">
+                      <Info size={13} />
+                    </span>
+                  </Tooltip>
+                </label>
                 <InputNumber
                   id="spine-gap"
                   className="stat-input-number"
@@ -357,6 +380,27 @@ export default function App() {
                   addonAfter="mm"
                   onChange={handleSpineGapChange}
                   onBlur={commitSpineGap}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') {
+                      event.preventDefault();
+                      commitSpineGap();
+                    }
+                  }}
+                />
+              </div>
+              <div className="setting-row page-content-row">
+                  <span className="stat-label-with-help">
+                  <span className="stat-label">双页内容</span>
+                  <Tooltip title="当一页 PDF 是完整的左右双页扫描图时，请开启此开关。仅支持封底+封面、左页+右页的扫描逻辑；由多个独立图片拼成或只有单侧内容的 PDF，请先预处理">
+                    <span className="field-help" role="img" aria-label="当一页 PDF 是完整的左右双页扫描图时，请开启此开关。仅支持封底+封面、左页+右页的扫描逻辑；由多个独立图片拼成或只有单侧内容的 PDF，请先预处理">
+                      <Info size={13} />
+                    </span>
+                  </Tooltip>
+                </span>
+                <Switch
+                  checked={pageContentMode !== DEFAULT_PAGE_CONTENT_MODE}
+                  onChange={handlePageContentModeChange}
+                  aria-label="是否双页内容"
                 />
               </div>
               </div>
@@ -374,6 +418,12 @@ export default function App() {
                     addonAfter="mm"
                     onChange={handleSpineGapChange}
                     onBlur={commitSpineGap}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter') {
+                        event.preventDefault();
+                        commitSpineGap();
+                      }
+                    }}
                   />
                 </div>
               </div>
@@ -389,14 +439,14 @@ export default function App() {
                 <div className="blank-position-list">
                   {plan.blankPositions.map((position, index) => (
                     <div className="blank-position-row" key={`${position}-${index}`}>
-                      <label className="stat-label" htmlFor={`blank-position-${index}`}>
-                        空白页 {index + 1}
+                      <label className="stat-label-with-help" htmlFor={`blank-position-${index}`}>
+                        <span className="stat-label">空白页 {index + 1}</span>
+                        <Tooltip title="输入该空白页作为成册的第 N 页">
+                          <span className="field-help" role="img" aria-label="作为成册的第 N 页说明">
+                            <Info size={13} />
+                          </span>
+                        </Tooltip>
                       </label>
-                      <Tooltip title="输入该空白页作为成册的第 N 页">
-                        <span className="field-help" role="img" aria-label="作为成册的第 N 页说明">
-                          <Info size={13} />
-                        </span>
-                      </Tooltip>
                       <div className="blank-input-group">
                         <InputNumber
                           id={`blank-position-${index}`}
@@ -408,6 +458,12 @@ export default function App() {
                           addonAfter="页"
                           onChange={(value) => handleBlankPositionChange(index, value)}
                           onBlur={() => commitBlankPosition(index)}
+                          onKeyDown={(event) => {
+                            if (event.key === 'Enter') {
+                              event.preventDefault();
+                              commitBlankPosition(index);
+                            }
+                          }}
                         />
                       </div>
                     </div>

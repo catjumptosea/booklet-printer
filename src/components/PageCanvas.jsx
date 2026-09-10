@@ -3,6 +3,7 @@ import { useEffect, useRef } from 'react';
 export default function PageCanvas({
   pdfDoc,
   pageNumber,
+  crop = null,
   boxWidth,
   boxHeight,
   forceLandscape = false,
@@ -22,12 +23,18 @@ export default function PageCanvas({
       const base = page.getViewport({ scale: 1 });
       const dpr = window.devicePixelRatio || 1;
       const shouldRotate = forceLandscape && base.width < base.height;
-      const naturalWidth = shouldRotate ? base.height : base.width;
-      const naturalHeight = shouldRotate ? base.width : base.height;
+      const cropLeft = Math.max(0, Math.min(1, crop?.left ?? 0));
+      const cropTop = Math.max(0, Math.min(1, crop?.top ?? 0));
+      const cropWidth = Math.max(0.001, Math.min(1 - cropLeft, crop?.width ?? 1));
+      const cropHeight = Math.max(0.001, Math.min(1 - cropTop, crop?.height ?? 1));
+      const contentWidth = base.width * cropWidth;
+      const contentHeight = base.height * cropHeight;
+      const naturalWidth = shouldRotate ? contentHeight : contentWidth;
+      const naturalHeight = shouldRotate ? contentWidth : contentHeight;
       const scale = Math.min((boxWidth * dpr) / naturalWidth, (boxHeight * dpr) / naturalHeight);
       const drawW = base.width * scale;
       const drawH = base.height * scale;
-      const visibleWidth = shouldRotate ? drawH : drawW;
+      const visibleWidth = shouldRotate ? contentHeight * scale : contentWidth * scale;
       canvas.width = Math.max(1, Math.floor((boxWidth * dpr)));
       canvas.height = Math.max(1, Math.floor((boxHeight * dpr)));
       canvas.style.width = `${Math.floor(boxWidth)}px`;
@@ -47,8 +54,8 @@ export default function PageCanvas({
       }
       const centeredViewport = page.getViewport({
         scale,
-        offsetX: -(drawW / 2),
-        offsetY: -(drawH / 2),
+        offsetX: -((cropLeft + cropWidth / 2) * drawW),
+        offsetY: -((cropTop + cropHeight / 2) * drawH),
       });
       renderTask = page.render({ canvasContext: ctx, viewport: centeredViewport });
       try {
@@ -67,7 +74,7 @@ export default function PageCanvas({
       cancelled = true;
       renderTask?.cancel();
     };
-  }, [pdfDoc, pageNumber, boxWidth, boxHeight, forceLandscape, contentAnchor]);
+  }, [pdfDoc, pageNumber, crop, boxWidth, boxHeight, forceLandscape, contentAnchor]);
 
   return <canvas ref={canvasRef} className="page-canvas" />;
 }

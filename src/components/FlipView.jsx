@@ -47,11 +47,11 @@ function getSpineGapPx(spineGap) {
 }
 
 function getPageContentWidthPx(spineGap, geometry) {
-  return (geometry.sheetWidth - getSpineGapPx(spineGap)) / 2;
+  return geometry.sheetWidth / 2 - getSpineGapPx(spineGap);
 }
 
-// Each page box reserves half the spine gap at both edges. The view crops the
-// outer halves, leaving one continuous gutter at the book spine.
+// The configured value is the distance from each page's content to the spine.
+// Each page box keeps one configured gap on its spine-facing edge.
 function getPageBoxWidth(spineGap, geometry) {
   return getPageContentWidthPx(spineGap, geometry) + getSpineGapPx(spineGap);
 }
@@ -86,23 +86,30 @@ function renderPageImage(
   contentInsetPx = 0,
   contentAnchor = 'center',
   forceLandscape = false,
+  crop = null,
 ) {
   return new Promise((resolve, reject) => {
     (async () => {
       const page = await pdfDoc.getPage(pageNumber);
       const baseViewport = page.getViewport({ scale: 1 });
       const inset = Math.max(0, Math.min(boxWidth / 2, contentInsetPx)) * renderScale;
-      const contentWidth = Math.max(1, boxWidth * renderScale - inset * 2);
       const shouldRotate = forceLandscape && baseViewport.width < baseViewport.height;
-      const naturalWidth = shouldRotate ? baseViewport.height : baseViewport.width;
-      const naturalHeight = shouldRotate ? baseViewport.width : baseViewport.height;
+      const cropLeft = Math.max(0, Math.min(1, crop?.left ?? 0));
+      const cropTop = Math.max(0, Math.min(1, crop?.top ?? 0));
+      const cropWidth = Math.max(0.001, Math.min(1 - cropLeft, crop?.width ?? 1));
+      const cropHeight = Math.max(0.001, Math.min(1 - cropTop, crop?.height ?? 1));
+      const visibleContentWidth = baseViewport.width * cropWidth;
+      const visibleContentHeight = baseViewport.height * cropHeight;
+      const naturalWidth = shouldRotate ? visibleContentHeight : visibleContentWidth;
+      const naturalHeight = shouldRotate ? visibleContentWidth : visibleContentHeight;
+      const availableWidth = Math.max(1, boxWidth * renderScale - inset);
       const scale = Math.min(
-        contentWidth / naturalWidth,
+        availableWidth / naturalWidth,
         (boxHeight * renderScale) / naturalHeight,
       );
       const drawWidth = baseViewport.width * scale;
       const drawHeight = baseViewport.height * scale;
-      const visibleWidth = shouldRotate ? drawHeight : drawWidth;
+      const visibleWidth = shouldRotate ? visibleContentHeight * scale : visibleContentWidth * scale;
       const canvas = document.createElement('canvas');
       canvas.width = Math.max(1, Math.floor(boxWidth * renderScale));
       canvas.height = Math.max(1, Math.floor(boxHeight * renderScale));
@@ -110,28 +117,55 @@ function renderPageImage(
       const context = canvas.getContext('2d');
       context.fillStyle = '#ffffff';
       context.fillRect(0, 0, canvas.width, canvas.height);
-      const availableWidth = canvas.width - inset * 2;
+      const contentClipWidth = availableWidth;
+      const contentClipX = contentAnchor === 'left' ? inset : 0;
       const contentCenterX = contentAnchor === 'left'
         ? inset + visibleWidth / 2
         : contentAnchor === 'right'
-          ? Math.max(
-            inset + visibleWidth / 2,
-            canvas.width - inset - visibleWidth / 2,
-          )
+          ? canvas.width - inset - visibleWidth / 2
           : inset + availableWidth / 2;
-      context.translate(
-        contentCenterX,
-        canvas.height / 2,
-      );
-      if (shouldRotate) {
-        context.rotate(Math.PI / 2);
-      }
       const centeredViewport = page.getViewport({
         scale,
-        offsetX: -(drawWidth / 2),
-        offsetY: -(drawHeight / 2),
+        offsetX: -((cropLeft + cropWidth / 2) * drawWidth),
+        offsetY: -((cropTop + cropHeight / 2) * drawHeight),
       });
-      await page.render({ canvasContext: context, viewport: centeredViewport }).promise;
+      context.save();
+      context.setTransform(1, 0, 0, 1, 0, 0);
+      context.beginPath();
+      context.rect(contentClipX, 0, contentClipWidth, canvas.height);
+      context.clip();
+      context.translate(contentCenterX, canvas.height / 2);
+      const hasCrop = cropWidth < 1 || cropHeight < 1 || cropLeft > 0 || cropTop > 0;
+      if (hasCrop) {
+        const sourceCanvas = document.createElement('canvas');
+        sourceCanvas.width = Math.max(1, Math.ceil(drawWidth));
+        sourceCanvas.height = Math.max(1, Math.ceil(drawHeight));
+        const sourceContext = sourceCanvas.getContext('2d');
+        await page.render({
+          canvasContext: sourceContext,
+          viewport: page.getViewport({ scale }),
+        }).promise;
+        if (shouldRotate) {
+          context.rotate(Math.PI / 2);
+        }
+        context.drawImage(
+          sourceCanvas,
+          cropLeft * drawWidth,
+          cropTop * drawHeight,
+          cropWidth * drawWidth,
+          cropHeight * drawHeight,
+          -visibleContentWidth * scale / 2,
+          -visibleContentHeight * scale / 2,
+          visibleContentWidth * scale,
+          visibleContentHeight * scale,
+        );
+      } else {
+        if (shouldRotate) {
+          context.rotate(Math.PI / 2);
+        }
+        await page.render({ canvasContext: context, viewport: centeredViewport }).promise;
+      }
+      context.restore();
       resolve(await canvasToObjectUrl(canvas, 'image/jpeg', quality));
     })().catch(reject);
   });
@@ -197,7 +231,7 @@ function getHighResRenderTarget(shell, spineGap, geometry) {
   const devicePixelRatio = Math.max(1, window.devicePixelRatio || 1);
   const displayWidth = Math.min(availableWidth, availableHeight * getVisibleAspect(geometry));
   const displayGapPx = getSpineGapPx(spineGap) * (displayWidth / geometry.sheetWidth);
-  const displayContentWidth = Math.max(0, (displayWidth - displayGapPx) / 2);
+  const displayContentWidth = Math.max(0, (displayWidth - displayGapPx * 2) / 2);
   const targetPixelWidth = Math.max(1, Math.round(displayContentWidth * devicePixelRatio));
   const gapPx = Math.round(displayGapPx * devicePixelRatio);
   const targetHeight = Math.max(1, Math.round(targetPixelWidth * (geometry.pageHeight / geometry.pageWidth)));
@@ -214,11 +248,13 @@ function getHighResRenderTarget(shell, spineGap, geometry) {
   };
 }
 
-function softenBookShadow(pageFlip) {
+function softenBookShadow(pageFlip, spineGap = 0) {
   const render = pageFlip.getRender?.();
   if (!render || typeof render.drawBookShadow !== 'function') return;
 
   render.drawBookShadow = function drawBookShadow() {
+    if (clampSpineGap(spineGap) === 0) return;
+
     const rect = this.getRect?.();
     const context = this.ctx;
     if (!rect || !context) return;
@@ -571,9 +607,10 @@ export default function FlipView({
             geometry.pageHeight,
             undefined,
             undefined,
-            spineGapPx / 2,
+            spineGapPx,
             getPageContentAnchor(pageNumber),
             plan.format === 'a6',
+            slot.crop,
           );
         if (cancelled) {
           revokeImageUrls([src]);
@@ -631,7 +668,7 @@ export default function FlipView({
       pageFlip.loadFromImages(lowResUrls);
       applyIntegerPageGeometry(pageFlip, spineGap, geometry);
       activeQualityRef.current = 'low';
-      softenBookShadow(pageFlip);
+      softenBookShadow(pageFlip, spineGap);
       useDesktopCanvas(pageFlip);
       const flipPages = pageFlip.getPageCollection()?.getPages() || [];
       markVirtualPages(pageFlip);
@@ -796,6 +833,7 @@ export default function FlipView({
 
     const renderKey = [
       plan.originalPageCount,
+      plan.pageContentMode,
       plan.total,
       plan.blankPositions.join('-'),
       geometry.paper.id,
@@ -859,9 +897,10 @@ export default function FlipView({
             target.height,
             1,
             HIGH_RES_JPEG_QUALITY,
-            target.gap / 2,
+            target.gap,
             getPageContentAnchor(pageNumber),
             plan.format === 'a6',
+            slot.crop,
           );
         highResUrls.push(src);
         await preloadImage(src);

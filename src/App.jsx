@@ -31,6 +31,17 @@ function formatSize(bytes) {
 
 export default function App() {
   const changeFileInputRef = useRef(null);
+  const fileTokenRef = useRef(0);
+  const lastPdfDocRef = useRef(null);
+
+  function disposeDoc(doc) {
+    try {
+      const disposed = doc?.destroy?.();
+      disposed?.catch?.(() => {});
+    } catch {
+      // ignore dispose errors
+    }
+  }
   const [status, setStatus] = useState('idle'); // idle | parsing | ready
   const [error, setError] = useState(null);
   const [fileMeta, setFileMeta] = useState(null);
@@ -68,6 +79,7 @@ export default function App() {
       return;
     }
 
+    const token = ++fileTokenRef.current;
     setPaperSize(DEFAULT_PAPER_SIZE);
     setBookletFormat(DEFAULT_BOOKLET_FORMAT);
     setPageContentMode(DEFAULT_PAGE_CONTENT_MODE);
@@ -84,14 +96,20 @@ export default function App() {
     }
 
     try {
-      const buf = await file.arrayBuffer();
-      const exportBytes = new Uint8Array(buf.slice(0));
-      const previewBytes = new Uint8Array(buf.slice(0));
-      const doc = await loadPdfDoc(previewBytes);
-      if (isReplacement) {
-        pdfDoc?.destroy?.();
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      if (token !== fileTokenRef.current) return;
+      const doc = await loadPdfDoc(bytes.slice());
+      if (token !== fileTokenRef.current) {
+        disposeDoc(doc);
+        return;
       }
-      setBytes(exportBytes);
+
+      const previousDoc = lastPdfDocRef.current;
+      if (previousDoc && previousDoc !== doc) {
+        disposeDoc(previousDoc);
+      }
+      lastPdfDocRef.current = doc;
+      setBytes(bytes);
       setPdfDoc(doc);
       setFileMeta({ name: file.name, size: file.size });
       const nextPlan = buildBookletPlan(
@@ -105,6 +123,7 @@ export default function App() {
       setBookletFormat(nextPlan.format);
       setStatus('ready');
     } catch (err) {
+      if (token !== fileTokenRef.current) return;
       if (err?.name === 'PasswordException') {
         setError('该 PDF 已加密，请先解密后再试');
       } else {
@@ -114,10 +133,11 @@ export default function App() {
         setStatus('idle');
       }
     } finally {
-      setChangingFile(false);
+      if (token === fileTokenRef.current) {
+        setChangingFile(false);
+      }
     }
   }
-
   async function handleExport() {
     if (!bytes || !plan || exporting) return;
     setExporting(true);

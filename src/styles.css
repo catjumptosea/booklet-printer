@@ -1843,3 +1843,41 @@ input[type="number"]::-webkit-inner-spin-button {
     padding: 36px 20px;
   }
 }
+
+
+.error-boundary {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  text-align: center;
+  padding: 24px;
+  color: var(--ink);
+  background: var(--bg);
+}
+.error-boundary h1 {
+  margin: 0;
+  font-size: 20px;
+  color: var(--accent-deep);
+}
+.error-boundary p {
+  margin: 0;
+  color: var(--muted);
+  max-width: 420px;
+}
+.error-boundary button {
+  margin-top: 8px;
+  padding: 8px 18px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #fff;
+  background: var(--accent);
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.error-boundary button:hover {
+  background: var(--accent-deep);
+}

@@ -2,6 +2,7 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { ConfigProvider } from 'antd';
 import App from './App';
+import ErrorBoundary from './components/ErrorBoundary';
 import './styles.css';
 
 ReactDOM.createRoot(document.getElementById('root')).render(
@@ -37,7 +38,9 @@ ReactDOM.createRoot(document.getElementById('root')).render(
         },
       }}
     >
-      <App />
+      <ErrorBoundary>
+        <App />
+      </ErrorBoundary>
     </ConfigProvider>
   </React.StrictMode>,
 );

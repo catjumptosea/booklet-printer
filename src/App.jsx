@@ -1,6 +1,6 @@
-import { useRef, useState } from 'react';
-import { Alert, Divider, InputNumber, Segmented, Switch, Tooltip } from 'antd';
-import { AlertTriangle, BookOpenCheck, Info, Layers, Loader2, RotateCcw, ShieldCheck, X } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { Alert, Dropdown, InputNumber, message, Segmented, Tooltip } from 'antd';
+import { AlertTriangle, BookOpenCheck, Columns2, FileUp, Info, Layers, Loader2, RotateCcw, Scissors, ShieldCheck, X } from 'lucide-react';
 import 'antd/dist/reset.css';
 import packageJson from '../package.json';
 import Dropzone from './components/Dropzone';
@@ -16,11 +16,12 @@ import {
   normalizeBookletFormat,
   normalizePaperSize,
   normalizeSpineGap,
-  DEFAULT_PAGE_CONTENT_MODE,
   PAPER_SIZES,
 } from './lib/booklet';
 import { loadPdfDoc } from './lib/pdfjs';
 import { baseName, buildExportPdf } from './lib/exportPdf';
+import { processSplitScan } from './lib/splitScan';
+import { processDoublePageScan } from './lib/doublePageScan';
 
 const MAX_SIZE = 100 * 1024 * 1024;
 
@@ -50,7 +51,6 @@ export default function App() {
   const [plan, setPlan] = useState(null);
   const [paperSize, setPaperSize] = useState('a4');
   const [bookletFormat, setBookletFormat] = useState(DEFAULT_BOOKLET_FORMAT);
-  const [pageContentMode, setPageContentMode] = useState(DEFAULT_PAGE_CONTENT_MODE);
   const [spineGap, setSpineGap] = useState(0);
   const [spineGapDraft, setSpineGapDraft] = useState(0);
   const [blankInputs, setBlankInputs] = useState([]);
@@ -59,6 +59,12 @@ export default function App() {
   const [exporting, setExporting] = useState(false);
   const [exportDone, setExportDone] = useState(null);
   const [changingFile, setChangingFile] = useState(false);
+  const [uploadMode, setUploadMode] = useState('direct'); // direct | split | double
+  const [splitStatus, setSplitStatus] = useState('idle'); // idle | processing | error
+  const [splitProgress, setSplitProgress] = useState('');
+  const [splitError, setSplitError] = useState(null);
+  const [sourceIsSplit, setSourceIsSplit] = useState(false);
+  const replaceModeRef = useRef('direct');
   const activeSpineGap = normalizeSpineGap(spineGap);
   const activePaperSize = normalizePaperSize(paperSize);
   const activeBookletFormat = activePaperSize === 'a4'
@@ -66,8 +72,48 @@ export default function App() {
     : 'a5';
   const activePaper = PAPER_SIZES[activePaperSize];
 
-  async function handleFile(file) {
+  function resetWorkspaceSettings() {
+    setPaperSize(DEFAULT_PAPER_SIZE);
+    setBookletFormat(DEFAULT_BOOKLET_FORMAT);
+    setSpineGap(0);
+    setSpineGapDraft(0);
+    setView('flip');
+    setExportMode('duplex');
+    setExportDone(null);
+  }
+
+  function clearSplitSource() {
+    setSourceIsSplit(false);
+  }
+
+  function handleBackToUpload() {
+    fileTokenRef.current += 1;
+    const currentDoc = lastPdfDocRef.current;
+    if (currentDoc) {
+      disposeDoc(currentDoc);
+    }
+    lastPdfDocRef.current = null;
+    setStatus('idle');
+    setError(null);
+    setFileMeta(null);
+    setBytes(null);
+    setPdfDoc(null);
+    setPlan(null);
+    setBlankInputs([]);
+    setChangingFile(false);
+    resetWorkspaceSettings();
+    setSplitStatus('idle');
+    setSplitProgress('');
+    setSplitError(null);
+    clearSplitSource();
+  }
+
+  async function handleFile(file, mode = uploadMode) {
     if (!file) return;
+    if (mode === 'split' || mode === 'double') {
+      await handleSplitFile(file, Boolean(pdfDoc && plan), mode);
+      return;
+    }
     const isReplacement = Boolean(pdfDoc && plan);
     const isPdf = /\.pdf$/i.test(file.name) || file.type === 'application/pdf';
     if (!isPdf) {
@@ -80,13 +126,7 @@ export default function App() {
     }
 
     const token = ++fileTokenRef.current;
-    setPaperSize(DEFAULT_PAPER_SIZE);
-    setBookletFormat(DEFAULT_BOOKLET_FORMAT);
-    setPageContentMode(DEFAULT_PAGE_CONTENT_MODE);
-    setSpineGap(0);
-    setSpineGapDraft(0);
-    setView('flip');
-    setExportMode('duplex');
+    resetWorkspaceSettings();
     setError(null);
     setExportDone(null);
     if (isReplacement) {
@@ -116,11 +156,11 @@ export default function App() {
         doc.numPages,
         undefined,
         DEFAULT_BOOKLET_FORMAT,
-        DEFAULT_PAGE_CONTENT_MODE,
       );
       setPlan(nextPlan);
       setBlankInputs(nextPlan.blankPositions.map(String));
       setBookletFormat(nextPlan.format);
+      clearSplitSource();
       setStatus('ready');
     } catch (err) {
       if (token !== fileTokenRef.current) return;
@@ -138,6 +178,115 @@ export default function App() {
       }
     }
   }
+
+  async function handleSplitFile(file, fromWorkspace, processMode = 'split') {
+    const isPdf = /\.pdf$/i.test(file.name) || file.type === 'application/pdf';
+    if (!isPdf) {
+      if (fromWorkspace) setError('仅支持 PDF 文件');
+      else {
+        setSplitError('仅支持 PDF 文件');
+        setSplitStatus('error');
+      }
+      return;
+    }
+    if (file.size > MAX_SIZE) {
+      if (fromWorkspace) setError('文件超过 100 MB，请先拆分后再试');
+      else {
+        setSplitError('文件超过 100 MB，请先拆分后再试');
+        setSplitStatus('error');
+      }
+      return;
+    }
+
+    const token = ++fileTokenRef.current;
+    if (fromWorkspace) {
+      setChangingFile(true);
+      setError(null);
+    } else {
+      setSplitStatus('processing');
+      setSplitError(null);
+    }
+    setSplitProgress('');
+
+    try {
+      const originalBytes = new Uint8Array(await file.arrayBuffer());
+      if (token !== fileTokenRef.current) return;
+      const processor = processMode === 'double' ? processDoublePageScan : processSplitScan;
+      const { blob, info } = await processor(originalBytes, ({ phase, current, total }) => {
+        if (token !== fileTokenRef.current) return;
+        if (phase === 'validate') setSplitProgress(`正在检查第 ${current} / ${total} 页`);
+        else if (phase === 'process') setSplitProgress(`正在处理第 ${current} / ${total} 页`);
+        else if (phase === 'build') setSplitProgress('正在生成 PDF');
+      });
+      if (token !== fileTokenRef.current) return;
+      const resultBytes = new Uint8Array(await blob.arrayBuffer());
+      const doc = await loadPdfDoc(resultBytes.slice());
+      if (token !== fileTokenRef.current) {
+        disposeDoc(doc);
+        return;
+      }
+
+      const previousDoc = lastPdfDocRef.current;
+      if (previousDoc && previousDoc !== doc) {
+        disposeDoc(previousDoc);
+      }
+      lastPdfDocRef.current = doc;
+
+      resetWorkspaceSettings();
+      setBytes(resultBytes);
+      setPdfDoc(doc);
+      setFileMeta({ name: file.name, size: originalBytes.length });
+      const nextPlan = buildBookletPlan(
+        doc.numPages,
+        undefined,
+        DEFAULT_BOOKLET_FORMAT,
+      );
+      setPlan(nextPlan);
+      setBlankInputs(nextPlan.blankPositions.map(String));
+      setBookletFormat(nextPlan.format);
+      setStatus('ready');
+      setSourceIsSplit(true);
+      const successText = processMode === 'double' ? '双页拆分完成' : '拆分完成';
+      message.success(`${successText}：${info.originalPages} 页 → ${info.resultPages} 页`);
+      setSplitStatus('idle');
+      setSplitProgress('');
+      setSplitError(null);
+    } catch (err) {
+      if (token !== fileTokenRef.current) return;
+      const isPasswordError = err?.name === 'PasswordException'
+        || /encrypted|password/i.test(err?.message || '');
+      const message = isPasswordError
+        ? '该 PDF 已加密，请先解密后再试'
+        : (err?.message || '处理失败，请重试');
+      if (fromWorkspace) {
+        setError(message);
+      } else {
+        setSplitError(message);
+        setSplitStatus('error');
+      }
+    } finally {
+      if (token === fileTokenRef.current && fromWorkspace) {
+        setChangingFile(false);
+      }
+    }
+  }
+
+  function handleSplitReset() {
+    setSplitStatus('idle');
+    setSplitProgress('');
+    setSplitError(null);
+  }
+
+  function handleUploadModeChange(mode) {
+    setUploadMode(mode);
+    handleSplitReset();
+  }
+
+  function handleReplaceOption(mode) {
+    replaceModeRef.current = mode;
+    changeFileInputRef.current?.click();
+  }
+
   async function handleExport() {
     if (!bytes || !plan || exporting) return;
     setExporting(true);
@@ -214,7 +363,7 @@ export default function App() {
     const nextPositions = plan.blankPositions.map((position, positionIndex) => (
       positionIndex === index ? parsedPosition : position
     ));
-    const nextPlan = buildBookletPlan(plan.sourcePageCount, nextPositions, activeBookletFormat, pageContentMode);
+    const nextPlan = buildBookletPlan(plan.sourcePageCount, nextPositions, activeBookletFormat);
     setPlan(nextPlan);
     setBlankInputs((current) => current.map((item, itemIndex) => (
       itemIndex === index ? String(parsedPosition) : item
@@ -244,7 +393,7 @@ export default function App() {
     const nextBookletFormat = value === 'long' ? 'a5' : normalizeBookletFormat(bookletFormat);
     setBookletFormat(nextBookletFormat);
     if (plan && plan.format !== nextBookletFormat) {
-      const nextPlan = buildBookletPlan(plan.sourcePageCount, undefined, nextBookletFormat, pageContentMode);
+      const nextPlan = buildBookletPlan(plan.sourcePageCount, undefined, nextBookletFormat);
       setPlan(nextPlan);
       setBlankInputs(nextPlan.blankPositions.map(String));
       setSpineGap(0);
@@ -256,17 +405,7 @@ export default function App() {
   function handleBookletFormatChange(value) {
     if (value === activeBookletFormat || !plan) return;
     setBookletFormat(value);
-    const nextPlan = buildBookletPlan(plan.sourcePageCount, undefined, value, pageContentMode);
-    setPlan(nextPlan);
-    setBlankInputs(nextPlan.blankPositions.map(String));
-    setExportDone(null);
-  }
-
-  function handlePageContentModeChange(enabled) {
-    const nextMode = enabled ? 'horizontal' : DEFAULT_PAGE_CONTENT_MODE;
-    if (!plan || nextMode === pageContentMode) return;
-    setPageContentMode(nextMode);
-    const nextPlan = buildBookletPlan(plan.sourcePageCount, undefined, activeBookletFormat, nextMode);
+    const nextPlan = buildBookletPlan(plan.sourcePageCount, undefined, value);
     setPlan(nextPlan);
     setBlankInputs(nextPlan.blankPositions.map(String));
     setExportDone(null);
@@ -276,9 +415,15 @@ export default function App() {
     <div className="app">
       <header className="topbar">
         <div className="brand">
-          <div className="brand-mark">
+          <button
+            type="button"
+            className="brand-mark"
+            onClick={handleBackToUpload}
+            aria-label="返回上传界面"
+            title="返回上传界面"
+          >
             <BookOpenCheck size={18} strokeWidth={2} />
-          </div>
+          </button>
           <div className="brand-text">
             <span className="brand-name">
               Booklet Press <small className="brand-version">v{packageJson.version}</small>
@@ -303,7 +448,16 @@ export default function App() {
       )}
 
       {!ready ? (
-        <Dropzone onFile={handleFile} busy={status === 'parsing'} />
+        <Dropzone
+          onFile={(file) => handleFile(file, uploadMode)}
+          busy={status === 'parsing' || splitStatus === 'processing'}
+          uploadMode={uploadMode}
+          onUploadModeChange={handleUploadModeChange}
+          splitStatus={splitStatus}
+          splitProgress={splitProgress}
+          splitError={splitError}
+          onSplitReset={handleSplitReset}
+        />
       ) : (
         <main className="workspace">
           <aside className="sidebar">
@@ -312,7 +466,10 @@ export default function App() {
               <div className="file-row">
                 <div className="file-info">
                   <span className="file-name" title={fileMeta.name}>{fileMeta.name}</span>
-                  <span className="file-size">{formatSize(fileMeta.size)}</span>
+                  <span className="file-meta-line">
+                    {sourceIsSplit && <span className="split-badge">已拆分</span>}
+                    <span className="file-size">{formatSize(fileMeta.size)}</span>
+                  </span>
                 </div>
                 <input
                   ref={changeFileInputRef}
@@ -320,19 +477,37 @@ export default function App() {
                   accept="application/pdf,.pdf"
                   hidden
                   onChange={(event) => {
-                    handleFile(event.target.files?.[0]);
+                    handleFile(event.target.files?.[0], replaceModeRef.current);
                     event.target.value = '';
                   }}
                 />
-                <button
-                  type="button"
-                  className="btn-ghost"
-                  onClick={() => changeFileInputRef.current?.click()}
-                  disabled={changingFile || exporting}
-                >
-                  {changingFile ? <Loader2 size={13} className="spin" /> : <RotateCcw size={13} />}
-                  {changingFile ? '替换中' : '换文件'}
-                </button>
+                <div className="file-row-actions">
+                  <Dropdown
+                    trigger={['click']}
+                    disabled={changingFile || exporting}
+                    menu={{
+                      items: [
+                        { key: 'direct', icon: <FileUp size={13} />, label: '单页文档' },
+                        { key: 'double', icon: <Columns2 size={13} />, label: '双页文档' },
+                        { key: 'split', icon: <Scissors size={13} />, label: '混合文档' },
+                      ],
+                      onClick: ({ key }) => handleReplaceOption(key),
+                    }}
+                  >
+                    <button
+                      type="button"
+                      className="btn-ghost"
+                      disabled={changingFile || exporting}
+                    >
+                      {changingFile ? <Loader2 size={13} className="spin" /> : <RotateCcw size={13} />}
+                      {changingFile ? (
+                        splitStatus === 'processing' && splitProgress
+                          ? <span className="btn-progress-text">{splitProgress}</span>
+                          : '替换中'
+                      ) : '换文件'}
+                    </button>
+                  </Dropdown>
+                </div>
               </div>
               <div className="file-meta-strip" aria-label="文件统计">
                 <div className="file-meta-item">
@@ -353,7 +528,7 @@ export default function App() {
                 <Segmented
                   block
                   size="large"
-                  className="paper-size-segmented"
+                  className="paper-size-segmented soft-segmented"
                   aria-label="纸张尺寸"
                   value={activePaperSize}
                   onChange={handlePaperSizeChange}
@@ -369,7 +544,7 @@ export default function App() {
                   <Segmented
                     block
                     size="large"
-                    className="paper-size-segmented"
+                    className="paper-size-segmented soft-segmented"
                     aria-label="小册子格式"
                     value={activeBookletFormat}
                     onChange={handleBookletFormatChange}
@@ -406,21 +581,6 @@ export default function App() {
                       commitSpineGap();
                     }
                   }}
-                />
-              </div>
-              <div className="setting-row page-content-row">
-                  <span className="stat-label-with-help">
-                  <span className="stat-label">双页内容</span>
-                  <Tooltip title="当一页 PDF 是完整的左右双页扫描图时，请开启此开关。仅支持封底+封面、左页+右页的扫描逻辑；由多个独立图片拼成或只有单侧内容的 PDF，请先预处理">
-                    <span className="beta-badge" role="img" aria-label="当一页 PDF 是完整的左右双页扫描图时，请开启此开关。仅支持封底+封面、左页+右页的扫描逻辑；由多个独立图片拼成或只有单侧内容的 PDF，请先预处理">
-                      BETA
-                    </span>
-                  </Tooltip>
-                </span>
-                <Switch
-                  checked={pageContentMode !== DEFAULT_PAGE_CONTENT_MODE}
-                  onChange={handlePageContentModeChange}
-                  aria-label="是否双页内容"
                 />
               </div>
               </div>

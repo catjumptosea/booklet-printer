@@ -120,11 +120,7 @@ async function placeSlot(page, outDoc, srcDoc, slot, position, spineGap, sheet, 
   const needsQuarterTurn = bookletFormat === 'a6'
     ? metadataWidth < metadataHeight
     : metadataWidth > metadataHeight;
-  const targetAngle = (
-    metaAngle
-    + (needsQuarterTurn ? 90 : 0)
-    + (bookletFormat === 'a6' && !crop ? 180 : 0)
-  ) % 360;
+  const targetAngle = (metaAngle + (needsQuarterTurn ? 90 : 0)) % 360;
   const swapped = targetAngle === 90 || targetAngle === 270;
   const vw = swapped ? sourceH : sourceW;
   const vh = swapped ? sourceW : sourceH;
@@ -152,21 +148,16 @@ async function placeSlot(page, outDoc, srcDoc, slot, position, spineGap, sheet, 
   const cx = isLeft ? baseCx + creepShiftPt : baseCx - creepShiftPt;
   const cy = box.y + box.h / 2;
 
-  let x;
-  let y;
-  if (targetAngle === 0) {
-    x = cx - drawW / 2;
-    y = cy - drawH / 2;
-  } else if (targetAngle === 90) {
-    x = cx + drawH / 2;
-    y = cy - drawW / 2;
-  } else if (targetAngle === 180) {
-    x = cx + drawW / 2;
-    y = cy + drawH / 2;
-  } else {
-    x = cx - drawH / 2;
-    y = cy + drawW / 2;
-  }
+  // pdf-lib rotates the embedded page counter-clockwise about the anchor we
+  // pass as (x, y). Derive that anchor from the desired centre so the slot
+  // position and the content rotation stay independent of each other.
+  const rad = (targetAngle * Math.PI) / 180;
+  const cos = Math.round(Math.cos(rad));
+  const sin = Math.round(Math.sin(rad));
+  const offsetX = (drawW / 2) * cos - (drawH / 2) * sin;
+  const offsetY = (drawW / 2) * sin + (drawH / 2) * cos;
+  const x = cx - offsetX;
+  const y = cy - offsetY;
 
   if (crop) {
     page.pushOperators(

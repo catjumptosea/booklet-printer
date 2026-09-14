@@ -47,13 +47,14 @@ function getSpineGapPx(spineGap) {
 }
 
 function getPageContentWidthPx(spineGap, geometry) {
-  return geometry.sheetWidth / 2 - getSpineGapPx(spineGap);
+  return Math.max(0, geometry.sheetWidth / 2 - getSpineGapPx(spineGap) / 2);
 }
 
-// The configured value is the distance from each page's content to the spine.
-// Each page box keeps one configured gap on its spine-facing edge.
+// Match the sheet preview: the two page boxes keep the sheet's half width and
+// each contributes half of the spine gap as an inset, so the visible gap
+// between the facing content areas equals the configured value.
 function getPageBoxWidth(spineGap, geometry) {
-  return getPageContentWidthPx(spineGap, geometry) + getSpineGapPx(spineGap);
+  return Math.max(1, getPageContentWidthPx(spineGap, geometry) + getSpineGapPx(spineGap) / 2);
 }
 
 function getStageWidth(spineGap, geometry) {
@@ -92,7 +93,7 @@ function renderPageImage(
     (async () => {
       const page = await pdfDoc.getPage(pageNumber);
       const baseViewport = page.getViewport({ scale: 1 });
-      const inset = Math.max(0, Math.min(boxWidth / 2, contentInsetPx)) * renderScale;
+      const inset = Math.max(0, Math.min(boxWidth, contentInsetPx)) * renderScale;
       const shouldRotate = forceLandscape && baseViewport.width < baseViewport.height;
       const cropLeft = Math.max(0, Math.min(1, crop?.left ?? 0));
       const cropTop = Math.max(0, Math.min(1, crop?.top ?? 0));
@@ -231,9 +232,10 @@ function getHighResRenderTarget(shell, spineGap, geometry) {
   const devicePixelRatio = Math.max(1, window.devicePixelRatio || 1);
   const displayWidth = Math.min(availableWidth, availableHeight * getVisibleAspect(geometry));
   const displayGapPx = getSpineGapPx(spineGap) * (displayWidth / geometry.sheetWidth);
-  const displayContentWidth = Math.max(0, (displayWidth - displayGapPx * 2) / 2);
+  const displayInsetPx = displayGapPx / 2;
+  const displayContentWidth = Math.max(0, displayWidth / 2 - displayInsetPx);
   const targetPixelWidth = Math.max(1, Math.round(displayContentWidth * devicePixelRatio));
-  const gapPx = Math.round(displayGapPx * devicePixelRatio);
+  const gapPx = Math.round(displayInsetPx * devicePixelRatio);
   const targetHeight = Math.max(1, Math.round(targetPixelWidth * (geometry.pageHeight / geometry.pageWidth)));
   const pagePixelWidth = targetPixelWidth + gapPx;
   const basePixelWidth = Math.round(geometry.pageWidth * devicePixelRatio * 1.12);
@@ -573,7 +575,7 @@ export default function FlipView({
     let lowResUrls = [];
 
     async function setup() {
-      const spineGapPx = getSpineGapPx(spineGap);
+      const spineInsetPx = getSpineGapPx(spineGap) / 2;
       const pageBoxWidth = getPageBoxWidth(spineGap, geometry);
       const totalImages = plan.total + 2;
       let completedImages = 0;
@@ -607,7 +609,7 @@ export default function FlipView({
             geometry.pageHeight,
             undefined,
             undefined,
-            spineGapPx,
+            spineInsetPx,
             getPageContentAnchor(pageNumber),
             plan.format === 'a6',
             slot.crop,

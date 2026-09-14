@@ -21,6 +21,10 @@ export default function SheetView({
     return list;
   }, [plan]);
 
+  useEffect(() => {
+    setIndex((value) => Math.max(0, Math.min(value, faces.length - 1)));
+  }, [faces.length]);
+
   const [index, setIndex] = useState(0);
   const wrapRef = useRef(null);
   const [scale, setScale] = useState(1);
@@ -63,7 +67,8 @@ export default function SheetView({
     return () => window.removeEventListener('keydown', onKey);
   }, [faces.length]);
 
-  const current = faces[index];
+  const currentIndex = Math.max(0, Math.min(index, faces.length - 1));
+  const current = faces[currentIndex];
   const face = current.sheet[current.side];
   const formatLabel = BOOKLET_FORMATS[bookletFormat]?.label || BOOKLET_FORMATS.a5.label;
   const paperSizeText = isA6
@@ -151,7 +156,7 @@ export default function SheetView({
           type="button"
           className="sheet-nav-button sheet-nav-prev"
           onClick={() => setIndex((value) => Math.max(0, value - 1))}
-          disabled={index === 0}
+                  disabled={currentIndex === 0}
           aria-label="上一张纸"
           title="上一张纸"
         >
@@ -161,7 +166,7 @@ export default function SheetView({
           type="button"
           className="sheet-nav-button sheet-nav-next"
           onClick={() => setIndex((value) => Math.min(faces.length - 1, value + 1))}
-          disabled={index === faces.length - 1}
+          disabled={currentIndex === faces.length - 1}
           aria-label="下一张纸"
           title="下一张纸"
         >

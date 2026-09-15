@@ -62,6 +62,7 @@ export default function App() {
   const [uploadMode, setUploadMode] = useState('direct'); // direct | split | double
   const [splitStatus, setSplitStatus] = useState('idle'); // idle | processing | error
   const [splitProgress, setSplitProgress] = useState('');
+  const [replaceProgress, setReplaceProgress] = useState('');
   const [splitError, setSplitError] = useState(null);
   const [sourceIsSplit, setSourceIsSplit] = useState(false);
   const replaceModeRef = useRef('direct');
@@ -104,6 +105,7 @@ export default function App() {
     resetWorkspaceSettings();
     setSplitStatus('idle');
     setSplitProgress('');
+    setReplaceProgress('');
     setSplitError(null);
     clearSplitSource();
   }
@@ -207,6 +209,7 @@ export default function App() {
       setSplitError(null);
     }
     setSplitProgress('');
+    setReplaceProgress('');
 
     try {
       const originalBytes = new Uint8Array(await file.arrayBuffer());
@@ -214,9 +217,15 @@ export default function App() {
       const processor = processMode === 'double' ? processDoublePageScan : processSplitScan;
       const { blob, info } = await processor(originalBytes, ({ phase, current, total }) => {
         if (token !== fileTokenRef.current) return;
-        if (phase === 'validate') setSplitProgress(`正在检查第 ${current} / ${total} 页`);
-        else if (phase === 'process') setSplitProgress(`正在处理第 ${current} / ${total} 页`);
-        else if (phase === 'build') setSplitProgress('正在生成 PDF');
+        if (phase === 'validate') {
+          setSplitProgress(`正在检查第 ${current} / ${total} 页`);
+          if (fromWorkspace) setReplaceProgress(`${current}/${total}页`);
+        } else if (phase === 'process') {
+          setSplitProgress(`正在处理第 ${current} / ${total} 页`);
+          if (fromWorkspace) setReplaceProgress(`${current}/${total}页`);
+        } else if (phase === 'build') {
+          setSplitProgress('正在生成 PDF');
+        }
       });
       if (token !== fileTokenRef.current) return;
       const resultBytes = new Uint8Array(await blob.arrayBuffer());
@@ -267,6 +276,7 @@ export default function App() {
     } finally {
       if (token === fileTokenRef.current && fromWorkspace) {
         setChangingFile(false);
+        setReplaceProgress('');
       }
     }
   }
@@ -501,8 +511,8 @@ export default function App() {
                     >
                       {changingFile ? <Loader2 size={13} className="spin" /> : <RotateCcw size={13} />}
                       {changingFile ? (
-                        splitStatus === 'processing' && splitProgress
-                          ? <span className="btn-progress-text">{splitProgress}</span>
+                        replaceProgress
+                          ? <span className="btn-progress-text">{replaceProgress}</span>
                           : '替换中'
                       ) : '换文件'}
                     </button>

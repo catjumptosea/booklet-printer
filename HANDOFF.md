@@ -1,17 +1,18 @@
 ---
 branch: main
-last_verified_commit: 89c6b3b
-updated_at: 2026-09-14 16:43
-status: released
+last_verified_commit: 5bb4fd6
+updated_at: 2026-09-15
+status: in_progress
 ---
 
 # TL;DR
 v1.6.0 已发布：上传页三条路径（单页/双页/混合文档）全部上线，并修复 A6 导出颠倒、
 A6 切换崩溃、书脊间距两视图不一致、双页文档白页等问题。提交已推送 main，
-标签 v1.6.0 与 GitHub Release 均已创建，Pages 部署成功。
+标签 v1.6.0 与 GitHub Release 均已创建，Pages 部署成功。当前本地正在改造混合文档：
+改为按页面尺寸拆分，并以文档内单页宽度辅助识别非 1.5 阈值的对开页。
 
 # 当前目标
-v1.6.0 已交付。下一步等待真实 PDF 的验收反馈，再决定是否需要补丁版本。
+混合文档改为页面尺寸分割，并让拆分后的半页贴近书脊；工作区换文件按钮显示简洁页码进度；双页文档保持原逻辑不变。本地改动尚未提交。
 
 # 已完成
 - [x] 上传页三条路径：单页文档 / 双页文档 / 混合文档，使用 Ant `Segmented`
@@ -25,9 +26,18 @@ v1.6.0 已交付。下一步等待真实 PDF 的验收反馈，再决定是否�
 - [x] `styles.css` 移除纸张视图的中缝阴影
 - [x] `FlipView` 书脊间距几何对齐纸张视图（内容宽 `sheetWidth/2 - gap/2`，内缩 `gap/2`）
 - [x] 三个提交推送 main，创建标签与 GitHub Release v1.6.0，Pages 自动部署成功
+- [x] 混合文档改为按页面尺寸判断：宽高比 ≥ 1.5 直接拆分；1.2～1.5 结合文档内单页宽度和高度容差辅助判断
+- [x] 混合文档不再要求每页恰好一张图片，文本、矢量和多图片页面不再阻断处理
+- [x] `mixedPageRules.js` 提供纯规则函数，并通过 Node 规则用例验证
+- [x] 混合文档说明文案同步更新；双页文档代码和文案未改
+- [x] 修复 `pageEntries` 使用 `pageWidth/pageHeight`、规则函数读取 `width/height` 导致拆分数恒为 0 的字段名不一致
+- [x] 用真实 21 页混合 PDF 验证：第一页 `540×540pt`，后续 20 页 `960×540pt`；修复后 `21 → 41`，20 个宽页全部拆分
+- [x] 混合文档拆分页贴书脊对齐：源对开页左半页贴输出页右边，右半页贴输出页左边，单页仍居中
+- [x] 工作区换文件按钮 loading 显示简洁页码进度（如 `5/21页`），上传页进度文案不变
 
 # 待办
 - [ ] 用真实 PDF 验收三条路径的页序、朝向、清晰度与报错提示，收集反馈
+- [ ] 补充验收 1.2～1.5 对开页和普通横向单页的边界判断
 - [ ] 如需修复，开新补丁版本（例如 v1.6.1）并同步更新 `package.json`
 
 # 关键决策
@@ -56,6 +66,8 @@ v1.6.0 已交付。下一步等待真实 PDF 的验收反馈，再决定是否�
 - `src/lib/exportPdf.js`：A6 双页导出朝向修复
 - `src/lib/doublePageScan.js`：新增（双页拆分）
 - `src/lib/splitScan.js`：新增（混合文档拆分）
+- `src/lib/mixedPageRules.js`：本次新增，混合文档页面尺寸与单页宽度辅助判断
+- `src/components/Dropzone.jsx`：本次更新混合文档说明，不再提示图片/元素报错
 - `src/styles.css`：Segmented、上传布局、说明模块、中缝阴影移除
 - `AGENTS.md`：新增项目规则，含「禁止 `git add -f` 提交 release/dist 等忽略目录」
 - `docs/handoff/2026-09-14-split-upload.md`：上一阶段 handoff 归档
@@ -65,6 +77,10 @@ v1.6.0 已交付。下一步等待真实 PDF 的验收反馈，再决定是否�
 - 命令：`node scripts/inline-dist.mjs`：通过，生成 standalone `dist/index.html`
 - 命令：`pnpm build`：未跑通；失败于 pnpm 依赖状态检查需网络/TTY，不是编译错误
 - 项目未配置测试框架；无自动测试
+- 2026-09-15 本次验证：`mixedPageRules.js` 规则用例通过；`node node_modules/vite/bin/vite.js build` 与 `node scripts/inline-dist.mjs` 通过
+- 2026-09-15 真实浏览器处理验证：`从前有个月饼村-混合.pdf` 由 21 页拆成 41 页，输出页尺寸为 `540×540pt`
+- 2026-09-15 对齐验证：同一真实文件中，输出页宽 `540pt`、半页内容宽 `480pt`；左半页横坐标 `x=60`（贴右），右半页 `x=0`（贴左），单页仍居中
+- 2026-09-15 浏览器验收：工作区替换混合文档时，按钮依次显示 `替换中 → 2/21页 → … → 21/21页 → 换文件`
 - Playwright 手工测量：间距 0/10/30mm 下，纸张视图与册子视图内容宽一致（420.00 / 405.86 / 377.58）
 - GitHub Actions「Deploy to GitHub Pages」：run 34823675857，success，40s
 
@@ -75,8 +91,8 @@ v1.6.0 已交付。下一步等待真实 PDF 的验收反馈，再决定是否�
 - GitHub Release 未附构建产物压缩包（与 v1.5.4 一致），如需要请另行上传
 
 # 下一步最小行动
-1. 用真实 PDF 验证三条路径，收集验收反馈
-2. 若有问题，在 main 上修复后开 v1.6.1
+1. 提交本次混合文档改动
+2. 在需要发布时开 v1.6.1 并同步 `package.json`
 
 # 踩坑与禁止事项
 - 现象：`git fetch/push` 报 `git: 'remote-https' is not a git command`

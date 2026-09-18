@@ -10,13 +10,15 @@ export default function Slot({
   anchor = 'center',
   forceLandscape = false,
 }) {
-  if (slot.kind === 'blank') {
+  // Unused halves of a printed A4 side have no booklet page at all, and blank
+  // pages are padding. Both render as an empty placeholder box.
+  if (!slot || slot.kind === 'blank' || slot.kind === 'outside') {
     return (
       <div
         className="slot slot-blank"
         style={{ width: boxWidth, height: boxHeight }}
       >
-        <span className="slot-blank-label">空白页</span>
+        {slot?.kind === 'blank' && <span className="slot-blank-label">空白页</span>}
       </div>
     );
   }

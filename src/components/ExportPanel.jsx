@@ -59,7 +59,7 @@ export default function ExportPanel({
       </button>
 
       <p className="export-meta">
-        共需 {plan.sheets} 张 {paperLabel} · {paper.sizeText}
+        共需 {plan.printedSides} 张 {paperLabel} · {paper.sizeText}
       </p>
 
       {exportDone && (

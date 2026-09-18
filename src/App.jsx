@@ -530,7 +530,7 @@ export default function App() {
                 </div>
                 <div className="file-meta-item">
                   <span>{activePaper.label} 纸张</span>
-                  <strong>{plan.sheets}</strong>
+                  <strong>{plan.printedSides}</strong>
                 </div>
               </div>
               <div className="stat stat-wide paper-size-stat antd-form-item">

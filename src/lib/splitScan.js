@@ -71,6 +71,32 @@ export function releaseCanvas(canvas) {
   canvas.height = 0;
 }
 
+async function embedCanvasImage(outDoc, canvas) {
+  const blob = await canvasToBlob(canvas);
+  const bytes = new Uint8Array(await blob.arrayBuffer());
+  return outDoc.embedJpg(bytes);
+}
+
+// Mixed documents keep each normalized page's own size. The booklet preview
+// and export stages fit it into the selected paper slot later.
+export async function embedCanvasPage(
+  outDoc,
+  canvas,
+  widthPt,
+  heightPt,
+) {
+  const image = await embedCanvasImage(outDoc, canvas);
+  const page = outDoc.addPage([widthPt, heightPt]);
+  page.drawImage(image, {
+    x: 0,
+    y: 0,
+    width: widthPt,
+    height: heightPt,
+  });
+}
+
+// Double-page mode keeps its established shared page size so every spread
+// remains aligned as one document.
 export async function embedCanvasCentered(
   outDoc,
   canvas,
@@ -78,20 +104,14 @@ export async function embedCanvasCentered(
   heightPt,
   maxWidthPt,
   maxHeightPt,
-  align = 'center',
 ) {
-  const blob = await canvasToBlob(canvas);
-  const bytes = new Uint8Array(await blob.arrayBuffer());
-  const image = await outDoc.embedJpg(bytes);
+  const image = await embedCanvasImage(outDoc, canvas);
   const page = outDoc.addPage([maxWidthPt, maxHeightPt]);
   const fit = Math.min(maxWidthPt / widthPt, maxHeightPt / heightPt);
   const drawWidth = widthPt * fit;
   const drawHeight = heightPt * fit;
-  let x = (maxWidthPt - drawWidth) / 2;
-  if (align === 'left') x = 0;
-  if (align === 'right') x = maxWidthPt - drawWidth;
   page.drawImage(image, {
-    x,
+    x: (maxWidthPt - drawWidth) / 2,
     y: (maxHeightPt - drawHeight) / 2,
     width: drawWidth,
     height: drawHeight,
@@ -131,13 +151,6 @@ export async function processSplitScan(pdfBytes, onProgress = () => {}) {
     };
   });
 
-  let maxWidthPt = 1;
-  let maxHeightPt = 1;
-  for (const output of outputs) {
-    maxWidthPt = Math.max(maxWidthPt, output.widthPt);
-    maxHeightPt = Math.max(maxHeightPt, output.heightPt);
-  }
-
   const outDoc = await PDFDocument.create();
   let splitCount = 0;
 
@@ -157,28 +170,22 @@ export async function processSplitScan(pdfBytes, onProgress = () => {}) {
       const [left, right] = splitCanvas(canvas);
       releaseCanvas(canvas);
       // A spread's left half becomes a left-hand page, so its spine is on the right edge.
-      await embedCanvasCentered(
+      await embedCanvasPage(
         outDoc,
         left,
         output.widthPt,
         output.heightPt,
-        maxWidthPt,
-        maxHeightPt,
-        'right',
       );
       releaseCanvas(left);
-      await embedCanvasCentered(
+      await embedCanvasPage(
         outDoc,
         right,
         output.widthPt,
         output.heightPt,
-        maxWidthPt,
-        maxHeightPt,
-        'left',
       );
       releaseCanvas(right);
     } else {
-      await embedCanvasCentered(outDoc, canvas, output.widthPt, output.heightPt, maxWidthPt, maxHeightPt);
+      await embedCanvasPage(outDoc, canvas, output.widthPt, output.heightPt);
       releaseCanvas(canvas);
     }
   }
@@ -193,7 +200,6 @@ export async function processSplitScan(pdfBytes, onProgress = () => {}) {
       originalPages: doc.numPages,
       splitCount,
       resultPages: doc.numPages + splitCount,
-      pageSize: { width: maxWidthPt, height: maxHeightPt },
     },
   };
 }

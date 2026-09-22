@@ -161,7 +161,7 @@ export default function Dropzone({
             <span className="split-tool-name">适合的文档：</span>
           </div>
           <div className="split-demo" aria-hidden="true">
-            {renderWideDemoPage('封面', '封底')}
+            {renderWideDemoPage('封底', '封面')}
             {renderWideDemoPage('1', '2')}
             {renderWideDemoPage('3', '4')}
             {renderWideDemoPage('5', '6')}
@@ -169,7 +169,7 @@ export default function Dropzone({
           </div>
           <ul className="split-rules">
             <li>适合每页都是一张完整的左右双页的 PDF 文件</li>
-            <li>第一个对开页为封面与封底，其余页面按左页、右页顺序</li>
+            <li>第一个对开页左侧为封底、右侧为封面，其余页面按左页、右页顺序</li>
             <li>请保证页面阅读方向正确，页面若旋转或倒置，可能影响拆分和排版方向</li>
           </ul>
         </div>
@@ -196,7 +196,7 @@ export default function Dropzone({
           </div>
           <ul className="split-rules">
             <li>适合混杂了单页和双页的内容的PDF文件</li>
-            <li>程序会根据页面尺寸拆分：宽高比 ≥ 1.5 的宽页自动拆成前页、后页，并参考文档内单页宽度识别其他对开页</li>
+            <li>程序按页面宽高比拆分：宽高比 ≥ 1.5 的宽页自动拆成前页、后页，其余页面按单页保留</li>
             <li>请保证页面阅读方向正确，页面若旋转或倒置，可能影响拆分和排版方向</li>
           </ul>
         </div>

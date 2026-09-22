@@ -1,8 +1,8 @@
 ---
 branch: main
-last_verified_commit: 3bb84b9
-updated_at: 2026-09-18
-status: released
+last_verified_commit: d9d501a
+updated_at: 2026-09-22
+status: in_progress
 ---
 
 # TL;DR
@@ -10,9 +10,14 @@ v1.6.0 已发布：上传页三条路径（单页/双页/混合文档）全部�
 A6 切换崩溃、书脊间距两视图不一致、双页文档白页等问题。提交已推送 main，
 标签 v1.6.0 与 GitHub Release 均已创建，Pages 部署成功。v1.6.1 随后发布：
 混合文档按页面尺寸拆分并贴书脊对齐，工作区换文件显示页码进度，说明文案同步更新。
+2026-09-21：修复导出朝向与两个预览不一致的问题（横向源页在 A5 下被多转 90°、
+A6 竖向源页转到反方向、`/Rotate` 补偿方向相反、非等比拉伸）。改动尚未提交。
+2026-09-22：修复册子视图白页：双页/混合文档在册子视图整页空白（纸张视图正常）。
+根因是 `renderPageImage` 在 `page.render()` 之前 `ctx.clip()`，pdf.js 对该状态的处理
+会让 pdf-lib 重新嵌入的分层 Form XObject 页面整体画不出来；改为渲染后再遮书脊留白。
 
 # 当前目标
-修复 A6 空白页数量与 A5 不一致的问题，并等待真实 PDF 验收反馈，再决定是否需要 v1.6.4。
+导出朝向与册子视图白页均已修复（代码已完成，待真实 PDF 验收后再决定是否发 v1.6.4）。
 
 # 已完成
 - [x] 上传页三条路径：单页文档 / 双页文档 / 混合文档，使用 Ant `Segmented`
@@ -44,11 +49,19 @@ A6 切换崩溃、书脊间距两视图不一致、双页文档白页等问题�
 - [x] 单数折叠纸时最后半张 A4 输出 `{ kind: 'outside' }` 占位，`Slot` 渲染为空槽，修复 `Cannot read properties of undefined (reading 'kind')` 崩溃
 - [x] 新增 `scripts/check-booklet-rules.mjs` 规则用例，0～80 页覆盖 A5/A6 补页一致性与槽位完整性
 - [x] v1.6.3 推送 main，标签与 GitHub Release 已创建，Pages 自动部署
+- [x] 导出朝向对齐两个预览：A5 槽位不再对横向源页补转 90°，A6 槽位竖向源页改为顺时针（与预览 `forceLandscape` 一致）
+- [x] `/Rotate` 补偿取反并归一：pdf.js 按 /Rotate 顺时针显示，pdf-lib `drawPage` 是逆时针，新增 `normalizeQuarterTurn`
+- [x] 裁剪比例按「显示方向」反算回 MediaBox 坐标，`/Rotate 90/180/270` 下的拆分裁剪不再错位
+- [x] 去掉导出时的非等比拉伸，改为与预览一致的等比缩放并居中留白
+- [x] 修复册子视图白页：`renderPageImage` 不再在 `page.render()` 前 `clip()`，改为渲染后按
+      书脊留白遮白；双页/混合文档在册子视图恢复显示，书脊间距行为不变
 
 # 待办
+- [ ] 用 `测试文件.pdf`（27 页全横向、`/Rotate 0`）在浏览器验收 A5 导出的朝向、页序与清晰度
+- [ ] 用带 `/Rotate` 元数据的文件（如 `airplane.pdf`，`/Rotate 90`）验收导出方向
 - [ ] 用真实 PDF 验收三条路径的页序、朝向、清晰度与报错提示，收集反馈
 - [ ] 补充验收 1.2～1.5 对开页和普通横向单页的边界判断
-- [ ] 如需修复，开新补丁版本（例如 v1.6.4）并同步更新 `package.json`
+- [ ] 验收通过后提交本次修复；如需发版，开 v1.6.4 并同步更新 `package.json`
 
 ## 决策 4：A6 是对折两次的缩小版 A5，而非双册拼版
 - 背景：v1.4.0 引入 A6 时把补页单位与纸张面数都换成 `pagesPerSheet`（A6=8），导致同样内容页数下 A6 比 A5 多补空白页
@@ -56,6 +69,14 @@ A6 切换崩溃、书脊间距两视图不一致、双页文档白页等问题�
 - 选择：按 4 的倍数补。A6 实物为一张 A4 上下两张 A6 纸、各自对折后手动叠放装订，装订结构与 A5 相同
 - 影响：A5/A6 空白页数恢复一致；`plan.sheets` 表示折叠纸数，新增 `plan.printedSides` 表示实际 A4 张数
 - 回滚：还原 `blankCount` 使用 `pagesPerSheet`，并恢复 A6 单一 8 面拼版分支
+
+## 决策 5：导出朝向以两个预览为唯一基准
+- 背景：部分文件在翻页视图和纸张视图都正常，导出后内容多转 90°
+- 原因：预览走 pdf.js，`getViewport` 自动应用 `/Rotate`；导出走 pdf-lib，`embedPage` 只搬运内容流、不携带 `/Rotate`，`getSize()` 也只读 MediaBox。原先的手工补偿方向与 pdf.js 相反，且对 A5 槽位多补了一次 1/4 圈，还把内容非等比拉伸到整个槽位
+- 选项：让预览对齐导出 / 让导出对齐预览
+- 选择：让导出对齐预览（用户以两个预览为准）
+- 影响：A5 横向源页不再旋转、等比居中留白；A6 竖向源页改为顺时针；带 `/Rotate` 的文件导出方向与阅读器一致
+- 回滚：`targetAngle` 还原为 `(metaAngle + (needsQuarterTurn ? 90 : 0)) % 360`，并恢复 A5 的 `needsQuarterTurn` 与 `fitToBox` 拉伸分支
 
 # 关键决策
 ## 决策 1：纸张视图的间距模型为准
@@ -89,6 +110,7 @@ A6 切换崩溃、书脊间距两视图不一致、双页文档白页等问题�
 - `src/styles.css`：Segmented、上传布局、说明模块、中缝阴影移除
 - `AGENTS.md`：新增项目规则，含「禁止 `git add -f` 提交 release/dist 等忽略目录」
 - `docs/handoff/2026-09-14-split-upload.md`：上一阶段 handoff 归档
+- `src/lib/exportPdf.js`：导出朝向对齐预览（`/Rotate` 取反、A5 不再补转、A6 顺时针）、裁剪比例按显示方向反算、等比缩放去掉拉伸
 
 # 运行与测试
 - 命令：`node node_modules/vite/bin/vite.js build`：通过
@@ -107,6 +129,19 @@ A6 切换崩溃、书脊间距两视图不一致、双页文档白页等问题�
 - 2026-09-18：浏览器级真实文件验收未完成，浏览器连接未返回页面状态；需后续在可用浏览器中确认第 19 页工作区视觉边距
 - 2026-09-18：`node scripts/check-booklet-rules.mjs` 通过，0～80 页 A5/A6 补页数与总页数全部一致，槽位无重复无缺失
 - 2026-09-18：Chrome 浏览器验收 A6（20 页样例，3 张 A4）：第 1 张上下半区 P20/P1+P2/P19 与 P18/P3+P4/P17，5 个折叠单元按序叠放即 20 页一本；最后半张 A4 渲染为空槽，无崩溃
+- 2026-09-21：`node scripts/check-booklet-rules.mjs` 通过（ALL RULE CASES PASS）
+- 2026-09-21：`node node_modules/vite/bin/vite.js build` + `node scripts/inline-dist.mjs` 通过，生成 standalone `dist/index.html`
+- 2026-09-21：像素级对照脚本 `E:\coco\diag\slot-compare.mjs`（dev 工具，不在仓库内）量化修复前后差异
+  - 修复前 `测试文件.pdf` A5：预览内容框 `{x:0,y:0.198,w:1,h:0.604}`，导出 `{x:0,y:0,w:1,h:1}`，导出等于预览逆时针转 90°（bestFit=270）
+  - 修复后同一文件：预览与导出内容框一致，bestFit=0，MAE 0.82
+  - 同一个 `测试文件.pdf` 第 1/14/27 页均 bestFit=0，内容框逐项一致
+  - 合成探针覆盖 竖/横 × `/Rotate 0/90/180/270` × A5/A6 共 12 组，修复后全部 bestFit=0
+  - 拆分（horizontal 裁剪）路径 4 组（含 `/Rotate 90/270`）修复后全部 bestFit=0
+  - 书脊间距 10mm/30mm：方向 bestFit=0，内容保持等比并按 gap/2 内缩
+- 2026-09-21：Chrome 无头浏览器端到端验收（`E:\coco\diag\e2e-export-check.mjs`，dev 工具，不在仓库内）
+  - 通过上传区真实选取 `测试文件.pdf` 完成 27 页上传，进入工作区并成功触发生成下载
+  - 导出 PDF 共 14 张 A4，第一张纸右槽内容框 `{x:0,y:0.198,w:1,h:0.604}`，与槽位对照基准一致
+  - 控制台仅有 2 条 antd 废弃 API 告警（InputNumber `addonAfter`、Alert `message`），与本修复无关
 
 # 未解决问题与风险
 - 三路径的朝向提醒只做了文案提示，未做自动纠偏
@@ -114,11 +149,13 @@ A6 切换崩溃、书脊间距两视图不一致、双页文档白页等问题�
 - 归一化输出统一 `image/jpeg` 质量 0.92，透明 PNG 可能出现白底
 - GitHub Release 未附构建产物压缩包（与 v1.5.4 一致），如需要请另行上传
 - 混合文档现在会保留每个输出页的自身尺寸，最终显示大小由当前打印纸槽位等比适配；需要真实 PDF 继续验收不同尺寸页面的朝向、清晰度和边距
+- 导出朝向现在与两个预览严格一致；横向源页在 A5 下会等比居中留白（不再补转填满），需要真机打印确认可接受
+- A6 竖向源页的旋转方向由逆时针改为顺时针以对齐预览，依赖旧方向的打印习惯需重新验收
 
 # 下一步最小行动
-1. 在浏览器中重新处理 `活页夹1.pdf`，检查第 19 页及第 20～23 页的工作区边距、朝向和清晰度
-2. 验收 A4、长条纸、A6 三种打印槽位下的等比例最大化效果
-3. 如需修复，开 v1.6.2 并同步更新 `package.json`
+1. 在 `http://127.0.0.1:5173/` 用 `测试文件.pdf` 验收 A5 翻页/纸张视图与导出 PDF 的朝向、页序、清晰度
+2. 用 `airplane.pdf`（`/Rotate 90`）验收带元数据旋转的文件
+3. 验收通过后提交本次改动；如需发版，开 v1.6.4 并同步更新 `package.json`
 
 # 踩坑与禁止事项
 - 现象：`git fetch/push` 报 `git: 'remote-https' is not a git command`
@@ -134,6 +171,63 @@ A6 切换崩溃、书脊间距两视图不一致、双页文档白页等问题�
 # 相关链接
 - GitHub Release：https://github.com/catjumptosea/booklet-printer/releases/tag/v1.6.0
 - 部署流程：`.github/workflows/deploy-pages.yml`
+
+## 决策 6：扫描绘本按 PDF 页面显示尺寸归一化
+- 背景：源 PDF 每页来自扫描图片，页面可能是单页或双页，单页之间尺寸也可能不同；不能使用图片 intrinsic 像素尺寸作为几何基准。
+- 三条路径：
+  - 单页文档：页面原样进入后续排版。
+  - 双页文档：先输出第一页显示右半（封面），再按中间页“左半、右半”输出，最后输出第一页显示左半（封底）。
+  - 混合文档：对页面自身显示宽高比 `>= 1.5` 的页面，按显示坐标“左半、右半”输出，不套用封面/封底重排。
+- 实现：新增 `src/lib/pageGeometry.js` 和 `src/lib/pageNormalize.js`。每个源页只嵌入一次，左右半共享同一个嵌入资源，裁切基于源 PDF 的 MediaBox 坐标；输出页保留源页 `/Rotate`，预览与导出共用同一套显示坐标换算。
+- 文本/矢量兼容：不再走 pdf.js canvas + JPEG 重编码，直接嵌入并裁切源 PDF 页面；缺少 Contents 的空白扫描页按空白页处理。
+- 排版：最终 PDF 槽位由纸张和册子类型决定，页面等比最大适配，靠近书脊排列；`spineGap=0` 时两页内容贴齐中线。
+
+## 本轮验证（2026-09-21）
+- `node scripts/check-booklet-rules.mjs`：`ALL RULE CASES PASS`
+- `node node_modules/vite/bin/vite.js build` + `node scripts/inline-dist.mjs`：通过，生成 standalone `dist/index.html`
+- `E:\coco\diag\normalize-check.mjs`：`NORMALIZE CASES PASS`，覆盖不同页面尺寸、双页顺序、混合页左右拆分与共享嵌入资源。
+- `E:\coco\diag\rotation-check.mjs`：`ROTATION CASES PASS`，用 pdf.js 显示结果比对 `/Rotate 0/90/180/270`，确认双页输出第 1 页对应显示右半、第 2 页对应显示左半，无额外旋转。
+- `E:\coco\diag\slot-compare.mjs`：真实 `测试文件.pdf`、双页/混合归一化产物以及 `/Rotate 0/90/180/270` 旋转探针均为 `bestFit=0`，预览与导出一致。
+
+## 决策 7：预览渲染改为「渲染后遮白」而非「渲染前裁剪」
+- 背景：双页/混合文档在册子视图整页空白，纸张视图正常；两者用同一个 `pdfDoc`，只是渲染函数不同。
+- 排查：在 `renderPageImage` 内加像素探针，按显示页记录暗像素比例。单页文档 27 页全部有内容；
+  双页文档 54 页、混合文档 35 页全部 `dark≈0`。对同一 `page`/`viewport` 做 A/B：
+  `无 clip` 得到内容（如第 1 页 `0.806`），`加 clip` 得到 `0`，`只加 setTransform` 仍有内容。
+- 结论：`page.render()` 之前调用 `ctx.clip()` 会让 pdf-lib 重新嵌入的 Form XObject 页面整体消失。
+- 选择：保留原来的 `translate` 定位，删掉渲染前的 `setTransform`/`beginPath`/`rect`/`clip`，
+  在渲染完成后用白色 `fillRect` 遮住书脊内缩区域。视觉结果与原来一致，书脊间距不影响内容。
+- 回滚：把渲染前的 `clip()` 加回 `renderPageImage`，并删除渲染后的遮白分支。
+
+## 本轮验证（2026-09-22）
+- `node scripts/check-booklet-rules.mjs`：`ALL RULE CASES PASS`
+- `E:\coco\diag\normalize-check.mjs`：`NORMALIZE CASES PASS`
+- `E:\coco\diag\rotation-check.mjs`：`ROTATION CASES PASS`
+- `node node_modules/vite/bin/vite.js build` + `node scripts/inline-dist.mjs`：通过
+- 真实 `测试文件.pdf` 三条路径截图暗像素比例（修复前 → 修复后）：
+  单页 `0.286 → 0.286`；双页 `0.000 → 0.403`；混合 `0.000 → 0.286`
+- 书脊间距 0/10/30 mm：册子视图均有内容（`dark≈0.40`），纸张视图内容宽随间距递减
+  （`350 → 338 → 314 px`），两视图仍一致
+
+## 本轮验证（2026-09-22 晚 · 册子视图白页收尾）
+- 根因再确认：`renderPageImage` 直接在预先 `translate/rotate` 过的 context 上调用
+  `page.render()`。pdf.js 绘制时会重写目标 context 变换，pdf-lib 重新嵌入的分层
+  Form XObject 会被推到画布外，槽位只剩白底；纸张视图走 `PageCanvas`，没有这段
+  预变换，所以一直正常。
+- 修复：`renderPageImage` 改为**始终**先用普通 viewport 把源页渲染到离屏 canvas，
+  再按裁剪/旋转/书脊锚点 `drawImage` 合成；裁剪页与非裁剪页共用同一条路径。
+- 加固：`syncPageImageLoadState` 在生产中所有源图都已 `preloadImage` 的前提下，直接
+  把 page-flip 的 `page.isLoad` 置真并持续重绘，彻底消除白色 loader 帧。
+- 回归（dev `http://127.0.0.1:5173/`，真实 `测试文件.pdf`，逐跨页像素统计）：
+  单页 15 跨页 / 双页 29 跨页 / 混合 19 跨页，均无 console error；
+  除尾部补白页与预览虚拟页外，无整半页纯白。
+- 回归（A4+A6 与书脊间距 30mm）：`mixed-a6-gap30` 19 跨页、`double-a6-gap30`
+  29 跨页、`mixed-a5-gap30` 19 跨页，仅尾部补白/虚拟页为白，其余均有内容。
+- 全屏高清 `updateFromImages()` 路径复测：跨页内容正常，无白页。
+- `node node_modules/vite/bin/vite.js build` + `node scripts/inline-dist.mjs`：通过；
+  `dist/index.html` 已更新（双页首跨页左右 `nonWhite = 1.000 / 0.818`）。
+- 遗留：本地修复尚未提交；GitHub Pages 上的 v1.6.3 仍是修复前代码，若要线上生效需
+  提交并推送触发部署。
 
 <!-- HUMAN:START -->
 <!-- HUMAN:END -->

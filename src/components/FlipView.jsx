@@ -125,48 +125,56 @@ function renderPageImage(
         : contentAnchor === 'right'
           ? canvas.width - inset - visibleWidth / 2
           : inset + availableWidth / 2;
-      const centeredViewport = page.getViewport({
-        scale,
-        offsetX: -((cropLeft + cropWidth / 2) * drawWidth),
-        offsetY: -((cropTop + cropHeight / 2) * drawHeight),
-      });
+      // Always render the source page into a fresh offscreen canvas with a
+      // plain viewport, then compose it here. pdf.js rewrites the target
+      // context transform while drawing, so rendering straight into a
+      // pre-translated/clipped context can push pdf-lib re-embedded pages off
+      // canvas and leave the slot looking blank. Rendering offscreen keeps
+      // placement deterministic for cropped, rotated and full pages alike.
+      const sourceCanvas = document.createElement('canvas');
+      sourceCanvas.width = Math.max(1, Math.ceil(drawWidth));
+      sourceCanvas.height = Math.max(1, Math.ceil(drawHeight));
+      const sourceContext = sourceCanvas.getContext('2d');
+      await page.render({
+        canvasContext: sourceContext,
+        viewport: page.getViewport({ scale }),
+      }).promise;
+
       context.save();
-      context.setTransform(1, 0, 0, 1, 0, 0);
-      context.beginPath();
-      context.rect(contentClipX, 0, contentClipWidth, canvas.height);
-      context.clip();
       context.translate(contentCenterX, canvas.height / 2);
-      const hasCrop = cropWidth < 1 || cropHeight < 1 || cropLeft > 0 || cropTop > 0;
-      if (hasCrop) {
-        const sourceCanvas = document.createElement('canvas');
-        sourceCanvas.width = Math.max(1, Math.ceil(drawWidth));
-        sourceCanvas.height = Math.max(1, Math.ceil(drawHeight));
-        const sourceContext = sourceCanvas.getContext('2d');
-        await page.render({
-          canvasContext: sourceContext,
-          viewport: page.getViewport({ scale }),
-        }).promise;
-        if (shouldRotate) {
-          context.rotate(Math.PI / 2);
-        }
-        context.drawImage(
-          sourceCanvas,
-          cropLeft * drawWidth,
-          cropTop * drawHeight,
-          cropWidth * drawWidth,
-          cropHeight * drawHeight,
-          -visibleContentWidth * scale / 2,
-          -visibleContentHeight * scale / 2,
-          visibleContentWidth * scale,
-          visibleContentHeight * scale,
-        );
-      } else {
-        if (shouldRotate) {
-          context.rotate(Math.PI / 2);
-        }
-        await page.render({ canvasContext: context, viewport: centeredViewport }).promise;
+      if (shouldRotate) {
+        context.rotate(Math.PI / 2);
       }
+      context.drawImage(
+        sourceCanvas,
+        Math.max(0, cropLeft * drawWidth),
+        Math.max(0, cropTop * drawHeight),
+        Math.max(1, cropWidth * drawWidth),
+        Math.max(1, cropHeight * drawHeight),
+        (-visibleContentWidth * scale) / 2,
+        (-visibleContentHeight * scale) / 2,
+        visibleContentWidth * scale,
+        visibleContentHeight * scale,
+      );
       context.restore();
+
+      // pdf.js installs and multiplies its own transforms while drawing. A clip
+      // set up before render() can make pages that pdf-lib re-embedded as
+      // nested form XObjects come out blank, so mask the spine margin after the
+      // page is drawn instead of clipping before it.
+      const contentClipRight = contentClipX + contentClipWidth;
+      if (contentClipX > 0.5 || contentClipRight < canvas.width - 0.5) {
+        context.save();
+        context.setTransform(1, 0, 0, 1, 0, 0);
+        context.fillStyle = '#ffffff';
+        if (contentClipX > 0.5) {
+          context.fillRect(0, 0, contentClipX, canvas.height);
+        }
+        if (contentClipRight < canvas.width - 0.5) {
+          context.fillRect(contentClipRight, 0, canvas.width - contentClipRight, canvas.height);
+        }
+        context.restore();
+      }
       resolve(await canvasToObjectUrl(canvas, 'image/jpeg', quality));
     })().catch(reject);
   });
@@ -348,6 +356,50 @@ function markVirtualPages(pageFlip) {
   if (pages[pages.length - 1]) pages[pages.length - 1].isVirtual = true;
 }
 
+// page-flip creates a fresh Image element for every page after the preview
+// sources have already been preloaded. An already-complete image can miss the
+// library's onload hook, leaving the page stuck on its white loading frame.
+// Every source is preloaded before it reaches page-flip, so mark the pages
+// loaded immediately and keep nudging a redraw; the loader frame can never
+// paint over an already-decoded page.
+function syncPageImageLoadState(pageFlip) {
+  const collection = pageFlip.getPageCollection?.();
+  const pages = collection?.getPages() || [];
+  let disposed = false;
+
+  const refresh = () => {
+    if (disposed || pageFlip.getPageCollection?.() !== collection) return;
+
+    for (const page of pages) {
+      if (!page?.image) continue;
+      page.isLoad = true;
+    }
+
+    pageFlip.getUI()?.update();
+  };
+
+  for (const page of pages) {
+    const image = page?.image;
+    if (!image) continue;
+
+    page.isLoad = true;
+    image.addEventListener('load', refresh, { once: true });
+    image.addEventListener('error', refresh, { once: true });
+    image.decode?.().then(refresh).catch(refresh);
+  }
+
+  refresh();
+  // re-check after the browser has had a chance to paint/decode.
+  window.requestAnimationFrame(refresh);
+  window.setTimeout(refresh, 0);
+  window.setTimeout(refresh, 150);
+
+  pageFlip.getUI()?.update();
+  return () => {
+    disposed = true;
+  };
+}
+
 function applyIntegerPageGeometry(pageFlip, spineGap, geometry) {
   const render = pageFlip.getRender?.();
   const settings = pageFlip.getSettings?.();
@@ -472,6 +524,7 @@ export default function FlipView({
     if (previewSwitchTokenRef.current !== switchToken || pageFlipRef.current !== pageFlip) return;
 
     pageFlip.updateFromImages(lowResImages);
+    syncPageImageLoadState(pageFlip);
     pageFlip.getUI()?.update();
     markVirtualPages(pageFlip);
     activeQualityRef.current = 'low';
@@ -495,6 +548,7 @@ export default function FlipView({
     if (!pageFlip || !highResImages || highResStateRef.current !== 'retained') return;
 
     pageFlip.updateFromImages(highResImages);
+    syncPageImageLoadState(pageFlip);
     pageFlip.getUI()?.update();
     markVirtualPages(pageFlip);
     activeQualityRef.current = 'high';
@@ -668,6 +722,7 @@ export default function FlipView({
       });
       pageFlipRef.current = pageFlip;
       pageFlip.loadFromImages(lowResUrls);
+      syncPageImageLoadState(pageFlip);
       applyIntegerPageGeometry(pageFlip, spineGap, geometry);
       activeQualityRef.current = 'low';
       softenBookShadow(pageFlip, spineGap);
@@ -934,6 +989,7 @@ export default function FlipView({
       highResStateRef.current = 'applied';
 
       pageFlip.updateFromImages(highResUrls);
+      syncPageImageLoadState(pageFlip);
       pageFlip.getUI()?.update();
       markVirtualPages(pageFlip);
       highResUrlsOwned = false;

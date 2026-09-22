@@ -79,6 +79,13 @@ pnpm preview     # 预览生产构建
 - 不在代码或文档中写入 token、密码、密钥、API key 等敏感信息。
 - 不执行 `git commit` 或 `git push`，除非用户明确要求。
 
+## 问题经验库
+
+- `docs/PITFALLS.md` 记录已经实际出现过的处理问题和踩坑经验。
+- 新会话处理 PDF 解析、页面尺寸、切页、预览、翻页视图或导出相关任务时，先读 `docs/PITFALLS.md` 中与任务相关的条目。
+- `AGENTS.md` 只维护入口索引和长期规则，不在本文件展开完整问题复盘。
+- 修复非显而易见、可能回归的问题后，在 `docs/PITFALLS.md` 追加现象、根因、修复原则、验证方式和回归风险。
+
 ## HANDOFF 读取与更新
 
 - 长期规则写在 `AGENTS.md`，任务状态写在 `HANDOFF.md`。

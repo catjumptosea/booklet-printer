@@ -62,7 +62,7 @@ A6 竖向源页转到反方向、`/Rotate` 补偿方向相反、非等比拉伸�
 - [ ] 用真实 PDF 验收三条路径的页序、朝向、清晰度与报错提示，收集反馈
 - [ ] 补充验收 1.2～1.5 对开页和普通横向单页的边界判断
 - [x] 提交本次修复并发布 v1.6.4：推送 `main`、创建并推送 `v1.6.4` 标签，Pages 部署成功
-- [ ] 在 GitHub 网页创建 v1.6.4 Release（当前 `gh` 登录 token 无效，命令行未能创建）
+- [x] 创建 GitHub Release v1.6.4：https://github.com/catjumptosea/booklet-printer/releases/tag/v1.6.4
 
 ## 决策 4：A6 是对折两次的缩小版 A5，而非双册拼版
 - 背景：v1.4.0 引入 A6 时把补页单位与纸张面数都换成 `pagesPerSheet`（A6=8），导致同样内容页数下 A6 比 A5 多补空白页
@@ -156,7 +156,7 @@ A6 竖向源页转到反方向、`/Rotate` 补偿方向相反、非等比拉伸�
 # 下一步最小行动
 1. 在 `http://127.0.0.1:5173/` 用 `测试文件.pdf` 验收 A5 翻页/纸张视图与导出 PDF 的朝向、页序、清晰度
 2. 用 `airplane.pdf`（`/Rotate 90`）验收带元数据旋转的文件
-3. 在 GitHub 网页基于 `v1.6.4` 标签创建 Release（CLI 当前无有效登录）
+3. 在 GitHub Release v1.6.4 页面补充后续用户反馈或验收说明
 
 # 踩坑与禁止事项
 - 现象：`git fetch/push` 报 `git: 'remote-https' is not a git command`
@@ -235,8 +235,7 @@ A6 竖向源页转到反方向、`/Rotate` 补偿方向相反、非等比拉伸�
   `docs/PITFALLS.md` 经验库。
 - 发布提交 `ba8556e`：`package.json` 版本更新为 `1.6.4`。
 - 已推送 `main` 和标签 `v1.6.4`；GitHub Actions「Deploy to GitHub Pages」运行成功。
-- GitHub Release 尚未创建：本机 `gh` 的默认账号 token 已失效，`git credential fill`
-  也未返回可用凭据；需在 GitHub 网页基于现有标签创建。
+- GitHub Release 已创建：https://github.com/catjumptosea/booklet-printer/releases/tag/v1.6.4
 
 <!-- HUMAN:START -->
 <!-- HUMAN:END -->

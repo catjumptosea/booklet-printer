@@ -1,6 +1,6 @@
 ---
 branch: main
-last_verified_commit: b5007ef
+last_verified_commit: 97141b0
 updated_at: 2026-09-23
 status: in_progress
 ---
@@ -17,8 +17,8 @@ A6 竖向源页转到反方向、`/Rotate` 补偿方向相反、非等比拉伸�
 会让 pdf-lib 重新嵌入的分层 Form XObject 页面整体画不出来；改为渲染后再遮书脊留白。
 
 # 当前目标
-准备发布 v1.6.5，包含册子视图页码定位优化和全屏退出后的点击方向修复。
-当前改动已完成浏览器回归、Vite 生产构建和规则测试，待提交、推送标签并确认 Pages 部署。
+v1.6.5 已发布，包含册子视图页码定位优化和全屏退出后的点击方向修复。
+`main`、标签、GitHub Release 和 GitHub Pages 均已完成。
 
 # 已完成
 - [x] 上传页三条路径：单页文档 / 双页文档 / 混合文档，使用 Ant `Segmented`
@@ -263,6 +263,12 @@ A6 竖向源页转到反方向、`/Rotate` 补偿方向相反、非等比拉伸�
   - 点击时内部 `renderRect` 恢复为 `642×454`，与 DOM 的 `.stf__canvas` 一致
 - 构建：Vite 生产构建通过；`scripts/check-booklet-rules.mjs` 返回 `ALL RULE CASES PASS`；`scripts/inline-dist.mjs` 通过。
 - 经验记录：`docs/PITFALLS.md` 已补「册子视图退出全屏后，点击右侧变成向前翻页」。
+
+## 发布记录（2026-09-23 · v1.6.5）
+- 修复提交 `9fa4683`：全屏退出点击方向、册子视图页码区间与页码跳转。
+- 发布提交 `97141b0`：`package.json` 版本更新为 `1.6.5`。
+- 已推送 `main` 和标签 `v1.6.5`；GitHub Pages 工作流 `35808721012` 成功，用时 1m34s。
+- GitHub Release 已创建：https://github.com/catjumptosea/booklet-printer/releases/tag/v1.6.5
 
 <!-- HUMAN:START -->
 <!-- HUMAN:END -->

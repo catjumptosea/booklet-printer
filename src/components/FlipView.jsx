@@ -232,6 +232,20 @@ function getSpreadIndex(pageIndex) {
   return Math.floor((pageIndex + 1) / 2);
 }
 
+function getSpreadPageRange(spreadIndex, total) {
+  if (spreadIndex === 0) return { start: 1, end: 1 };
+  if (spreadIndex === total / 2) return { start: total, end: total };
+  return {
+    start: spreadIndex * 2,
+    end: spreadIndex * 2 + 1,
+  };
+}
+
+function formatSpreadPageRange(spreadIndex, total) {
+  const { start, end } = getSpreadPageRange(spreadIndex, total);
+  return start === end ? `${start} / ${total}` : `${start}-${end} / ${total}`;
+}
+
 function getHighResRenderTarget(shell, spineGap, geometry) {
   const availableWidth = shell.clientWidth;
   const availableHeight = shell.clientHeight;
@@ -417,6 +431,21 @@ function applyIntegerPageGeometry(pageFlip, spineGap, geometry) {
   pageFlip.updateOrientation(pageFlip.getOrientation());
 }
 
+function refreshPageFlipLayout(pageFlip, spineGap, geometry) {
+  if (!pageFlip) return;
+
+  const render = pageFlip.getRender?.();
+  const ui = pageFlip.getUI?.();
+  if (!render || !ui) return;
+
+  // PageFlip caches boundsRect from the previous block size. Fullscreen entry
+  // and exit change the block size without recreating that cache, so a stale
+  // full-width rect can classify a click on the visible right page as left.
+  render.update?.();
+  applyIntegerPageGeometry(pageFlip, spineGap, geometry);
+  ui.update?.();
+}
+
 export default function FlipView({
   pdfDoc,
   plan,
@@ -580,6 +609,10 @@ export default function FlipView({
   }, [switchToLowRes]);
 
   const spreadCount = useMemo(() => Math.floor(plan.total / 2) + 1, [plan.total]);
+  const spreadPageRange = useMemo(
+    () => formatSpreadPageRange(index, plan.total),
+    [index, plan.total],
+  );
 
   useEffect(() => {
     const shell = shellRef.current;
@@ -731,6 +764,12 @@ export default function FlipView({
       markVirtualPages(pageFlip);
       hideBoundaryOuterShadow(pageFlip);
       pageFlip.getUI()?.update();
+      host.addEventListener('mousedown', () => {
+        refreshPageFlipLayout(pageFlipRef.current, spineGap, geometry);
+      }, true);
+      host.addEventListener('touchstart', () => {
+        refreshPageFlipLayout(pageFlipRef.current, spineGap, geometry);
+      }, true);
       pageFlip.on('resize', () => pageFlip.getUI()?.update());
 
       pageFlip.on('init', ({ data }) => {
@@ -793,16 +832,20 @@ export default function FlipView({
         highResReleaseTimerRef.current = null;
       }
       applyRetainedHighRes();
+      refreshPageFlipLayout(pageFlipRef.current, spineGap, geometry);
       return;
     }
 
     cancelHighResRender();
+    refreshPageFlipLayout(pageFlipRef.current, spineGap, geometry);
     scheduleDowngradeAfterFullscreenExit();
   }, [
     applyRetainedHighRes,
     cancelHighResRender,
     cancelPendingDowngrade,
+    geometry,
     scheduleDowngradeAfterFullscreenExit,
+    spineGap,
   ]);
 
   useEffect(() => {
@@ -819,8 +862,7 @@ export default function FlipView({
       window.requestAnimationFrame(() => {
         const pageFlip = pageFlipRef.current;
         if (!pageFlip) return;
-        applyIntegerPageGeometry(pageFlip, spineGap, geometry);
-        pageFlip.getUI()?.update();
+        refreshPageFlipLayout(pageFlip, spineGap, geometry);
       });
     };
     const orientation = window.screen?.orientation;
@@ -853,17 +895,17 @@ export default function FlipView({
 
   const submitJump = (event) => {
     event.preventDefault();
-    const parsedPosition = Number(jumpValue);
-    const isValid = Number.isInteger(parsedPosition)
-      && parsedPosition >= 1
-      && parsedPosition <= spreadCount;
+    const parsedPage = Number(jumpValue);
+    const isValid = Number.isInteger(parsedPage)
+      && parsedPage >= 1
+      && parsedPage <= plan.total;
 
     if (!isValid) {
       setJumpValue('');
       return;
     }
 
-    goToSpread(parsedPosition - 1);
+    goToSpread(Math.floor(parsedPage / 2));
     setJumpValue('');
   };
 
@@ -1067,11 +1109,11 @@ export default function FlipView({
               type="number"
               inputMode="numeric"
               min="1"
-              max={spreadCount}
+              max={plan.total}
               step="1"
               value={jumpValue}
-              placeholder={`1-${spreadCount}`}
-              aria-label="跳转页码"
+              placeholder={`1-${plan.total}`}
+              aria-label="跳转到书页页码"
               onChange={(event) => setJumpValue(event.target.value)}
               disabled={!ready || flipping || highResRender.active}
             />
@@ -1093,7 +1135,7 @@ export default function FlipView({
             >
               <ChevronLeft size={16} />
             </button>
-            <span className="pager-count">{index + 1} / {spreadCount}</span>
+            <span className="pager-count">{spreadPageRange}</span>
             <button
               type="button"
               onClick={() => goTo(1)}

@@ -1,7 +1,7 @@
 ---
 branch: main
-last_verified_commit: d9d501a
-updated_at: 2026-09-22
+last_verified_commit: b5007ef
+updated_at: 2026-09-23
 status: in_progress
 ---
 
@@ -17,7 +17,8 @@ A6 竖向源页转到反方向、`/Rotate` 补偿方向相反、非等比拉伸�
 会让 pdf-lib 重新嵌入的分层 Form XObject 页面整体画不出来；改为渲染后再遮书脊留白。
 
 # 当前目标
-导出朝向与册子视图白页均已修复（代码已完成，待真实 PDF 验收后再决定是否发 v1.6.4）。
+准备发布 v1.6.5，包含册子视图页码定位优化和全屏退出后的点击方向修复。
+当前改动已完成浏览器回归、Vite 生产构建和规则测试，待提交、推送标签并确认 Pages 部署。
 
 # 已完成
 - [x] 上传页三条路径：单页文档 / 双页文档 / 混合文档，使用 Ant `Segmented`
@@ -63,6 +64,8 @@ A6 竖向源页转到反方向、`/Rotate` 补偿方向相反、非等比拉伸�
 - [ ] 补充验收 1.2～1.5 对开页和普通横向单页的边界判断
 - [x] 提交本次修复并发布 v1.6.4：推送 `main`、创建并推送 `v1.6.4` 标签，Pages 部署成功
 - [x] 创建 GitHub Release v1.6.4：https://github.com/catjumptosea/booklet-printer/releases/tag/v1.6.4
+- [x] 册子视图底部页码改为成册页序区间：封面 `1 / N`，中间 `2-3 / N`，封底 `N / N`
+- [x] 册子视图跳转输入改为书页页码，输入任一页会定位到包含该页的跨页
 
 ## 决策 4：A6 是对折两次的缩小版 A5，而非双册拼版
 - 背景：v1.4.0 引入 A6 时把补页单位与纸张面数都换成 `pagesPerSheet`（A6=8），导致同样内容页数下 A6 比 A5 多补空白页
@@ -236,6 +239,30 @@ A6 竖向源页转到反方向、`/Rotate` 补偿方向相反、非等比拉伸�
 - 发布提交 `ba8556e`：`package.json` 版本更新为 `1.6.4`。
 - 已推送 `main` 和标签 `v1.6.4`；GitHub Actions「Deploy to GitHub Pages」运行成功。
 - GitHub Release 已创建：https://github.com/catjumptosea/booklet-printer/releases/tag/v1.6.4
+
+## 本轮任务（2026-09-23 · 册子视图页码）
+- 背景：36 页成册后册子视图显示 `3 / 19`，其中 `19` 是翻开视图数，不是用户熟悉的书页页码。
+- 改动：`src/components/FlipView.jsx` 新增跨页页码区间换算；封面/封底显示单页，
+  中间跨页显示两页区间；跳转输入范围改为 `1..plan.total`，输入页码后定位到对应跨页。
+- 验证：Vite 生产构建通过；`scripts/check-booklet-rules.mjs` 返回 `ALL RULE CASES PASS`。
+- 浏览器验证（18 页 PDF，补页后 20 页）：
+  - 初始：`1 / 20`
+  - 输入 `7`：`6-7 / 20`
+  - 输入 `20`：`20 / 20`
+  - 输入框提示：`1-20`
+  - 控制台只有既有 antd 废弃 API 警告，无本改动相关错误。
+- 遗留：该改动将随 v1.6.5 一起发布。
+
+## 本轮任务（2026-09-23 · 全屏退出点击方向）
+- 现象：册子视图进入全屏再退出后，点击书页右侧会退回前一跨页；退出后立刻点击最容易复现。
+- 根因：`page-flip` 在 `Render.boundsRect` 中缓存书页区域。退出全屏时 DOM 已缩回普通尺寸，但缓存仍是全屏的 `1346×952`，点击仍按全屏宽度分半，视觉右页被判定为内部左半区。
+- 修复：全屏进入/退出时刷新 `page-flip` 布局缓存；在书页宿主的 `mousedown` / `touchstart` 捕获阶段按当前 DOM 再刷新一次，确保退出后的第一次点击也使用最新边界。
+- 验证：
+  - 退出全屏后立即点击右侧：`6-7 / 20 → 8-9 / 20`
+  - 随后点击左侧：`8-9 / 20 → 6-7 / 20`
+  - 点击时内部 `renderRect` 恢复为 `642×454`，与 DOM 的 `.stf__canvas` 一致
+- 构建：Vite 生产构建通过；`scripts/check-booklet-rules.mjs` 返回 `ALL RULE CASES PASS`；`scripts/inline-dist.mjs` 通过。
+- 经验记录：`docs/PITFALLS.md` 已补「册子视图退出全屏后，点击右侧变成向前翻页」。
 
 <!-- HUMAN:START -->
 <!-- HUMAN:END -->
